@@ -44,8 +44,18 @@ OBJS       = o.bits \
 # Space separated list of XML files for building documentation.
 #DOCSRC = <prm-in-xml-sources>
 
+RESOURCES = ${APPDIR}.!Info \
+			${APPDIR}.transimp
 
-include LibraryCommand
+
+include CApp
+
+RUNIMAGE = ${APPDIR}.!Convert
+
+${APPDIR}.!Info: ${LDIR}.!Info
+	${CP} $? $@ ${CPFLAGS}
+${APPDIR}.transimp: ${RDIR}.transimp
+	${CP} $? $@ ${CPFLAGS}
 
 
 #---------------------------------------------------------------------------
