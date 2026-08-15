@@ -1,4 +1,0 @@
-*SET C$LibRoot ,ADFS::HardDisc4.$.XL.Task,ADFS::HardDisc4.$.CLib,^,
-*set mk$CC1 "CC6  -c -ffah -Otime  -APCS 3/32bit/fpe2  "
-*set mk$ASM1 "objasm6 -q s."
-run mkcommand
