@@ -1,0 +1,71 @@
+%YAML 1.0
+---
+
+# RISC OS build file to execute on https://build.riscos.online/
+
+# Source is optional (NYI), and should be a URL to source the content from
+#source: <url>
+
+# Defines a list of jobs which will be performed.
+# Only 1 job will currently be executed.
+jobs:
+  build:
+    # Env defines system variables which will be used within the environment.
+    # Multiple variables may be assigned.
+    env:
+      "Sys$Environment": ROBuild
+      "BUILD32": 1
+
+      # Faster building using the host toolchain
+      "Alias$AMU": "HostAMU %*0"
+
+    # Directory to change to before running script
+    #dir: <working directory>
+
+    # Commands which should be executed to perform the build.
+    # The build will terminate if any command returns a non-0 return code or an error.
+    script:
+
+      # Export the headers from XL library
+      - echo
+      - echo *** Build the XL library ***
+      - dir XL.Task
+      - amu -f Makefile export_hdrs
+      - Dir ^.^
+
+      # Export headers XL/CScript library (we only need the headers)
+      - echo
+      - echo *** Build the CScript library ***
+      - dir XL.CScript
+      - amu -f Makefile export_hdrs
+      - Dir ^.^
+
+      # Build XL library
+      - echo
+      - echo *** Build the XL library ***
+      - dir XL.Task
+      - amu -f Makefile export
+      - Dir ^.^
+
+      # Build component
+      - echo
+      - echo *** Build the component ***
+      - amu -f Makefile install INSTDIR=Install
+
+      # Test the command
+      - echo
+      - echo *** Run command ***
+      # This just checks that we *can* execute. It doesn't convert anything.
+      - /Install.!TransImp.!Convert
+
+      # Done!
+      - echo
+      - echo *** SUCCESS ***
+
+    # Outputs from the build are defined in artifacts
+    # These are a list of artifacts to report directories or files.
+    # Only a single item is currently supported.
+    artifacts:
+      # Each element of the artifacts should have a path key, which gives the file or
+      # directory to return.
+      - path: Install
