@@ -1,0 +1,35 @@
+/*->h.styles */
+
+
+extern void initstyles(void);
+extern void dumpstyles(void);
+
+extern void txwritedata(textstr * textp,int master,FILE * ofp);
+
+extern int  txstory(textstr * textp,int master);
+
+extern void txstorychain(FILE * ofp,textstr * textp,int master);
+
+extern void txstoryclear(void);
+
+extern void txstoryflush(FILE * ofp,int master);
+
+extern void txblank(blankstr * blankp,int master);
+                                         
+extern void txcheckstory(textstr * textp,objhdr *sectp,int master,FILE * ofp);
+
+
+#define TXSTORYFIRST 0x1
+#define TXSTORYLAST  0x2
+#define TXSTORYOTHER 0x0
+
+
+extern void embedrecord(objhdr * obj,int tag);
+extern int  isembeded(int tag,objhdr * obj);
+
+
+extern void picturerecord(int dcindex,int tag);
+extern int  pictureseen(int dcindex,int * tag);
+
+
+

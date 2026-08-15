@@ -1,0 +1,160 @@
+/*->c.main */
+
+
+#include <stdio.h>
+#include <string.h>
+#include <ctype.h>
+#include <time.h>
+#include <stdlib.h>
+
+#include "h.kernel"
+#include "h.os"
+
+
+#include "h.imp"
+
+
+#include "h.fsx"
+
+#include "h.bits"
+
+
+#include "h.colours"
+#include "h.styles"
+#include "h.frames"
+
+
+
+#include "h.main"
+
+
+
+
+filehdr * docdata;
+
+int       nostylecheck;
+int       directorymode;
+
+
+char      inputpath[MAXPATH];
+char    * inputcat;
+
+FILE    * inputfp;
+FILE    * outputfp;
+
+
+
+
+void terminate(char * message)
+{
+ _kernel_setenv("TransIMP$Failure",message);
+
+ fprintf(stderr,"%s\n",message);
+ exit(0);
+}
+
+
+int borderwidth;
+
+char * configpath="<TransIMP$Dir>.transimp";
+
+
+int main(int argc,char * argv[])
+{ 
+ int        i;
+ fstat      f;
+
+ if(argc<3) terminate("Syntax: Convert <input file> <output file>");
+ {
+  for(i=0;i<argc;i++)
+  {
+   if(!cstrcmp(argv[i],"-nostylecheck")) nostylecheck=1;
+  }
+
+  fs_stat(configpath,&f);
+  if(f.object==1)
+  {
+   FILE * fp;
+   fp=fopen(configpath,"rb");
+   if(fp)
+   {
+    fscanf(fp,"width:%d",&borderwidth);
+    fclose(fp);
+   }
+  }
+
+  strcpy(inputpath,argv[1]);
+  inputcat=inputpath+strlen(inputpath);
+
+  fs_stat(inputpath,&f);
+  if(!f.object)  terminate("Input file does not exist.");
+  if(f.object>1) directorymode=1;
+
+
+  if(directorymode)
+  {
+   strcpy(inputcat,".!DocData");
+  }
+
+  inputfp=fopen(inputpath,"rb");
+  if(!inputfp) terminate("Can't open input file");
+  else
+  {
+   docdata=malloc(sizeof(filehdr));
+   if(!docdata) terminate("Not enough memory for file header.");
+
+   if(fread(docdata,sizeof(filehdr),1,inputfp)!=1)terminate("Can't read input");
+   if(docdata->v3<MINVERSION) terminate("File produced by too old a version of Impression");
+
+   docdata=realloc(docdata,docdata->contents2);
+   if(!docdata) terminate("Not enough memory");
+
+   if(fread(((char*)docdata)+sizeof(filehdr),
+             docdata->contents2-sizeof(filehdr),1,inputfp)!=1) 
+                                         terminate("Can't read enough input");
+
+
+   if(directorymode)
+   {
+    fclose(inputfp);
+   }
+
+   initcolours();
+
+   initstyles();
+
+   initframes();
+
+
+   outputfp=fopen(argv[2],"wb");
+   if(!outputfp) terminate("Can't open output file");
+
+
+   fprintf(outputfp,"//->DDLFile\n");
+   fprintf(outputfp,"// Produced by TransIMP\n");
+   fprintf(outputfp,"//\n");
+   fprintf(outputfp,"\n\n");
+   fprintf(outputfp,"DOC={document}\n");
+   fprintf(outputfp,"\n");
+
+
+   dumpcolours();
+
+   dumpstyles();
+
+   dumpframes();
+
+   if(!directorymode)
+   {
+    fclose(inputfp);
+   }
+
+   fclose(outputfp);
+  }
+ }
+
+ return(0);
+}
+
+
+

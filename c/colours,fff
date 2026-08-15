@@ -1,0 +1,633 @@
+/*->c.colours */
+
+
+
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <stdio.h>
+#include <locale.h>
+#include <ctype.h>
+
+
+
+#include "h.imp"
+
+
+#include "h.bits"
+
+
+#include "h.main"
+
+
+#include "h.colours"
+
+
+
+#define COLNAMELEN 24
+
+#define RGBMODEL  0
+#define CMYKMODEL 1
+#define HSVMODEL  2
+
+
+
+
+/* can this colour be changed */
+
+#define COLOURLOCKED     0x1
+
+/* print this colour on a separate plate */
+
+#define COLOURPLATE      0x2
+                    
+/* colour chart colour */
+
+#define COLOURCHART      0x4
+
+/* transparent */
+
+#define COLOURTRANS      0x8
+
+/* overprint   */
+
+#define COLOUROVERPRINT  0x10
+
+/* process colour */
+
+#define COLOURPROCESS    0x20
+
+/* all plates  */
+
+#define COLOURALLPLATES  0x40
+
+/* transparent on print */
+
+#define COLOURNOPRINT    0x80
+
+
+
+
+
+#define PROCESST_COLVAL  0x100
+
+
+
+
+
+
+
+
+typedef struct quadstr
+{
+ union
+ {
+  struct
+  {
+   int r;
+   int g;
+   int b;
+
+  } rgb;
+
+  struct
+  {
+   int h;
+   int s;
+   int v;
+
+  } hsv;
+
+  struct
+  {
+   int c;
+   int m;
+   int y;
+   int k;
+
+  } cmyk;
+
+
+  struct
+  {
+   int x[6];
+  } xxx;
+
+ } type;
+} quadstr;
+
+
+
+#define MOD3LEN 16
+#define MOD4LEN 20
+
+
+
+typedef struct modelstr
+{
+ int pal;      /* palette word */
+ int len;      /* extension size */
+ int no;       /* model no */
+
+ union
+ {
+
+  int     word[15];
+  quadstr quad;
+
+ } data;
+
+} modelstr;
+
+
+
+typedef struct colourstr
+{
+ char       name[COLNAMELEN];
+ int        n;      /* unique number */
+ int        flags;
+ modelstr   model;
+ int        overprintlimit:17;
+ int        spare:15;
+
+} colourstr;
+
+
+
+
+
+#define OURBLACK   0x10000,1,0
+#define OURWHITE   0x10000,2,0
+#define OURTRANS   0x10000,3,0
+#define KEYTRANS   3
+#define KEYREG     10
+#define KEYCYAN    7
+#define KEYYELLOW  9
+#define KEYMAGENTA 8
+#define KEYBLACK   1
+
+
+#define DEFOVERPRINT ((0x10000*90)/100)
+
+
+#define MAXTINT 0x10000
+#define MAXCV   0x10000
+
+
+#define DSTCOLOUR 0x200
+
+
+
+
+
+
+
+
+
+
+/* NB MIN SEQ is greater than MAXDEF */
+
+#define MAXDEFCOLOURS 10
+#define MINCOLOURSEQ  0x20
+
+
+/*               3  +    5      +    5     +    5     */
+
+#define MODEL  0,0,0, 0,0,0,0,0, 0,0,0,0,0, 0,0,0,0,0
+#define MODELP              0,0, 0,0,0,0,0, 0,0,0,0,0
+#define MODEL4P               0, 0,0,0,0,0, 0,0,0,0,0
+
+#define MP DEFOVERPRINT
+
+
+
+static colourstr defcolours[MAXDEFCOLOURS]=
+{               /*  n  flags          pal */
+
+ "Black",           1, COLOURLOCKED|COLOURPROCESS,  
+                                      0,          MOD3LEN,CMYKMODEL,
+                                      0,0,0,MAXCV,  MODEL4P,MP,0,
+
+ "White",           2, COLOURLOCKED,  0xFFFFFF00, MOD3LEN,RGBMODEL,
+                                      MAXCV,MAXCV,MAXCV,   MODELP,MP,0,
+
+ "Transparent",     3, COLOURLOCKED|COLOURTRANS,
+                                      0xFFFFFF00, MOD3LEN,RGBMODEL,
+                                      MAXCV,MAXCV,MAXCV,   MODELP,MP,0,
+
+ "Red",             4, 0,             0x0000FF00, MOD3LEN,RGBMODEL,
+                                      MAXCV,0x0000,0x0000, MODELP,MP,0,
+
+ "Green",           5, 0,             0xFF0000,   MOD3LEN,RGBMODEL,
+                                      0x0000,MAXCV ,0x0000,MODELP,MP,0,
+
+ "Blue",            6, 0,             0xFF000000, MOD3LEN,RGBMODEL,
+                                      0x0000,0x0000,MAXCV, MODELP,MP,0,
+
+ "Cyan",            7, COLOURLOCKED|COLOURPROCESS,
+                                      0xFFFF0000, MOD3LEN,CMYKMODEL,
+                                      MAXCV,0,0,0,  MODEL4P,MP,0,
+
+ "Magenta",         8, COLOURLOCKED|COLOURPROCESS,
+                                      0xFF00FF00, MOD3LEN,CMYKMODEL,
+                                      0,MAXCV,0,0,  MODEL4P,MP,0,
+
+ "Yellow",          9, COLOURLOCKED|COLOURPROCESS,
+                                      0x00FFFF00, MOD3LEN,CMYKMODEL,
+                                      0,0,MAXCV,0,  MODEL4P,MP,0,
+
+ "Registration",   10, COLOURLOCKED|COLOURALLPLATES,
+                                      0,          MOD4LEN,CMYKMODEL,
+                                      MAXCV,MAXCV,MAXCV,MAXCV,MODEL4P,MP,0,
+};
+
+
+
+
+static colourstr * colourbase;
+static int         colourbasen;
+
+
+
+
+
+static colourstr * findcolourbyname(char * name)
+{
+ int i;
+
+
+ for(i=0;i<MAXDEFCOLOURS;i++)
+ {
+  if(!cstrcmp(defcolours[i].name,name)) return(&defcolours[i]);
+ }
+
+
+ for(i=0;i<colourbasen;i++)
+ {
+  if(!cstrcmp(colourbase[i].name,name)) return(&colourbase[i]);
+ }
+
+
+ return(NULL);
+}
+
+
+
+
+static colourstr * createcolour(char * name)
+{
+ colourstr * col;
+
+ colourbase=realloc(colourbase,(colourbasen+1)*sizeof(colourstr));
+
+ col=colourbase+colourbasen;
+ memset(col,0,sizeof(colourstr));
+ col->n=MINCOLOURSEQ+colourbasen;
+ strcpy(col->name,name);
+ colourbasen++;
+ col->overprintlimit=DEFOVERPRINT;
+
+ return(col);
+}
+
+
+#define IMAXTINT 128
+
+
+static void tintcol(colourstr  * col,int tint)
+{
+ int tint1;
+
+ tint1=IMAXTINT-tint;
+
+ if(col->model.no==RGBMODEL)
+ {
+  col->model.data.quad.type.rgb.r=
+        (tint1*MAXCV+tint*col->model.data.quad.type.rgb.r)/IMAXTINT;
+  col->model.data.quad.type.rgb.g=
+        (tint1*MAXCV+tint*col->model.data.quad.type.rgb.g)/IMAXTINT;
+  col->model.data.quad.type.rgb.b=
+        (tint1*MAXCV+tint*col->model.data.quad.type.rgb.b)/IMAXTINT;
+ }
+ else
+ if(col->model.no==HSVMODEL)
+ {
+  col->model.data.quad.type.hsv.h=
+                       (tint*col->model.data.quad.type.hsv.h)/IMAXTINT;
+  col->model.data.quad.type.hsv.s=
+                       (tint*col->model.data.quad.type.hsv.s)/IMAXTINT;
+  col->model.data.quad.type.hsv.v=
+           (tint1*MAXCV+tint*col->model.data.quad.type.hsv.v)/IMAXTINT;
+ }
+ else
+ if(col->model.no==CMYKMODEL)
+ {
+  col->model.data.quad.type.cmyk.c=
+                       (tint*col->model.data.quad.type.cmyk.c)/IMAXTINT;
+  col->model.data.quad.type.cmyk.m=
+                       (tint*col->model.data.quad.type.cmyk.m)/IMAXTINT;
+  col->model.data.quad.type.cmyk.y=
+                       (tint*col->model.data.quad.type.cmyk.y)/IMAXTINT;
+  col->model.data.quad.type.cmyk.k=
+                       (tint*col->model.data.quad.type.cmyk.k)/IMAXTINT;
+ }
+}
+
+
+
+
+
+
+void initcolours(void)
+{
+ int          ncol;
+ int          n;
+ icolourstr * icol;
+ colourstr  * col;
+ colourstr  * col1;
+ int          base;
+ int          seq;
+ int          pendingtint;
+ int          pass;
+
+
+ ncol=(docdata->tints-docdata->colour1)/sizeof(icolourstr);
+ pass=0;
+
+ while(pass<ncol)
+ {
+  icol=(icolourstr*)(((char*)docdata)+docdata->colour1);
+  pendingtint=0;
+
+  for(n=0;n<ncol;n++,icol++)
+  {
+   if(*icol->name)
+   {
+    if((icol->flags & 0x2)==2)
+    {
+     //("tint %d base %d\n",(col.k*100)/128,(col.y>>2)|((col.c & 0x3F)<<6));
+
+     base=(icol->y>>2)|((icol->c & 0x3F)<<6);
+     col1=findcolourbyname(
+                ((icolourstr*)((char*)docdata+docdata->colour1)+base)->name);
+     if(col1)
+     {
+      col=findcolourbyname(icol->name);
+      if(!col) col=createcolour(icol->name);
+
+      col->model.pal=(icol->palword<<8);
+
+      if(icol->flags & 0x80) col->flags|=COLOUROVERPRINT;
+      else                   col->flags&=~COLOUROVERPRINT;
+
+      seq=col->n;
+      *col=*col1;
+      col->n=seq;
+      strcpy(col->name,icol->name);
+      tintcol(col,icol->k);
+     }
+     else 
+     {
+      pendingtint=1;
+     }
+    }
+    else
+    if(pass==0)
+    {
+     col=findcolourbyname(icol->name);
+     if(!col) col=createcolour(icol->name);
+
+     col->model.pal=(icol->palword<<8);
+
+     if(icol->flags & 0x80) col->flags|=COLOUROVERPRINT;
+     else                   col->flags&=~COLOUROVERPRINT;
+
+     // expect 0x40 flag to be set
+
+     if((icol->flags & 0x3)==1)
+     {
+      // process
+      col->flags&=~COLOURPLATE;
+
+     }
+     else
+     if((icol->flags & 0x3)==0)
+     {
+      // spot
+      col->flags|=COLOURPLATE;
+     }
+
+     if((icol->y & 0x3)==1)
+     {
+      // CMYK
+
+      col->model.len=MOD4LEN;
+      col->model.no=CMYKMODEL;
+      col->model.data.quad.type.cmyk.c=(icol->c*MAXCV)/255;
+      col->model.data.quad.type.cmyk.m=(icol->m*MAXCV)/255;
+      col->model.data.quad.type.cmyk.y=((icol->y & 0xFC)*MAXCV)/255;
+      col->model.data.quad.type.cmyk.k=(icol->k*MAXCV)/255;
+     }
+     else
+     if((icol->y & 0x3)==2)
+     {
+      // HSV
+
+      col->model.len=MOD3LEN;
+      col->model.no=HSVMODEL;
+      col->model.data.quad.type.hsv.h=((icol->k<<4)|(icol->m>>4))*0x10000;
+      col->model.data.quad.type.hsv.s=(icol->c*MAXCV)/255;
+      col->model.data.quad.type.hsv.v=
+                           (((icol->y>>4)|((icol->m & 0xF)<<4))*MAXCV)/255;
+     }
+     else
+     {
+      // RGB
+
+      col->model.len=MOD3LEN;
+      col->model.no=RGBMODEL;
+      col->model.data.quad.type.rgb.r=(icol->c*MAXCV)/255;
+      col->model.data.quad.type.rgb.g=(icol->m*MAXCV)/255;
+      col->model.data.quad.type.rgb.b=(icol->k*MAXCV)/255;
+     }
+    }
+   }
+  }
+  pass++;
+  if(!pendingtint) break;
+ }
+}
+
+
+
+static colourstr * definecolours(int word)
+{
+ int         b0;
+ int         b1;
+ int         b2;
+ int         b3;
+ colourstr * col=NULL;
+ char        string[64];
+
+
+ b3=word & 0xFF;
+ b2=(word>>8) & 0xFF;
+ b1=(word>>16) & 0xFF;
+ b0=(word>>24) & 0xFF;
+
+ switch(b3 & 0x3)
+ {
+  case 0:  // RGB
+         sprintf(string,"RGB%02X%02X%02X",b2,b1,b0);
+         col=findcolourbyname(string);
+         if(!col)
+         {
+          col=createcolour(string);
+          col->model.len=MOD3LEN;
+          col->model.no=RGBMODEL;
+          col->model.data.quad.type.rgb.r=(b2*MAXCV)/255;
+          col->model.data.quad.type.rgb.g=(b1*MAXCV)/255;
+          col->model.data.quad.type.rgb.b=(b0*MAXCV)/255;
+         }
+         break;
+
+  case 1:  // CMYK
+        sprintf(string,"CMYK%02X%02X%02X%02X",b2,b1,b0,((b3 & 0xFC)*255)/0xFC);
+         col=findcolourbyname(string);
+         if(!col)
+         {
+          col=createcolour(string);
+          col->model.len=MOD4LEN;
+          col->model.no=CMYKMODEL;
+          col->model.data.quad.type.cmyk.c=(b2*MAXCV)/255;
+          col->model.data.quad.type.cmyk.m=(b1*MAXCV)/255;
+          col->model.data.quad.type.cmyk.y=((b3 & 0xFC)*MAXCV)/0xFC;
+          col->model.data.quad.type.cmyk.k=(b0*MAXCV)/255;
+         }
+         break;
+
+  case 2:  // HSV
+         sprintf(string,"HSV%02X%02X%02X",b2,b1,b0);
+         col=findcolourbyname(string);
+         if(!col)
+         {
+          col=createcolour(string);
+          col->model.len=MOD3LEN;
+          col->model.no=HSVMODEL;
+          col->model.data.quad.type.hsv.h=((b1>>4)|(b0<<4))*0x10000;
+          col->model.data.quad.type.hsv.s=
+                                 (((b2>>4)|((b1 & 0xF)<<4))*MAXCV)/255;
+          col->model.data.quad.type.hsv.v=
+                                 (((b3>>4)|((b2 & 0xF)<<4))*MAXCV)/255;
+         }
+         break;
+
+  case 3: // colour name
+         col=findcolourbyname(((icolourstr*)((char*)docdata+
+                                   docdata->colour1)+((b2<<6)|(b3>>2)))->name);
+         break;
+
+ }
+
+ return(col);
+}
+
+
+void definecolour(int word)
+{
+ definecolours(word);
+}
+
+
+
+
+
+char * colourstring(int word,int overprint,int transparent)
+{
+ static char string[64];
+ colourstr * col;
+
+ if(transparent) sprintf(string,"COL_%02x 0x10000 %d",KEYTRANS,overprint);
+ else
+ {
+  col=definecolours(word);
+  sprintf(string,"COL_%02x 0x10000 %d",col->n,overprint);
+ }
+
+ return(string);
+}
+
+
+
+
+
+static void dsputcoloursub(colourstr * c,FILE * fp)
+{
+ char       temp[256];
+
+ fprintf(fp,"COL_%02x={colour \"%s\" ",c->n,unquotec(c->name,temp));
+
+ if(c->model.no==RGBMODEL)
+ {
+  fprintf(fp,"{rgb 0x%x 0x%x 0x%x}",c->model.data.quad.type.rgb.r,
+                                     c->model.data.quad.type.rgb.g,
+                                     c->model.data.quad.type.rgb.b);
+ }
+ else
+ if(c->model.no==HSVMODEL)
+ {
+  fprintf(fp,"{hsv 0x%x 0x%x 0x%x}",c->model.data.quad.type.hsv.h,
+                                    c->model.data.quad.type.hsv.s,
+                                    c->model.data.quad.type.hsv.v);
+ }
+ else
+ if(c->model.no==CMYKMODEL)
+ {
+  fprintf(fp,"{cmyk 0x%x 0x%x 0x%x 0x%x}",c->model.data.quad.type.cmyk.c,
+                                          c->model.data.quad.type.cmyk.m,
+                                          c->model.data.quad.type.cmyk.y,
+                                          c->model.data.quad.type.cmyk.k);
+ }
+
+ if(c->flags & COLOURTRANS)    fprintf(fp,"{transparent 1}");
+ if(c->flags & COLOURNOPRINT)  fprintf(fp,"{noprint  1}");
+ if(c->flags & COLOURLOCKED)   fprintf(fp,"{lock 1}");
+ if(c->flags & COLOURPLATE)    fprintf(fp,"{spot 1}");
+ if(c->flags & COLOUROVERPRINT)fprintf(fp,"{overprint 1}");
+ fprintf(fp,"{overprintlimit 0x%x}",c->overprintlimit);
+
+ fprintf(fp,"}\n");
+
+}
+
+
+
+
+
+
+
+
+
+void dumpcolours(void)
+{
+ int i;
+
+ fprintf(outputfp,"// Colours\n\n");
+
+ for(i=0;i<MAXDEFCOLOURS;i++)
+ {
+  dsputcoloursub(&defcolours[i],outputfp);
+ }
+
+ for(i=0;i<colourbasen;i++)
+ {
+  dsputcoloursub(&colourbase[i],outputfp);
+ }
+
+ fprintf(outputfp,"\n\n");
+
+}
+
+
+
+

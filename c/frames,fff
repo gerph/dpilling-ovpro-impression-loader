@@ -1,0 +1,1767 @@
+/*->c.frames */
+
+
+
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <stdio.h>
+#include <locale.h>
+#include <ctype.h>
+#include <math.h>
+
+#include "h.os"
+
+#include "h.etc"
+#include "h.xmath"
+#include "h.transform"
+
+#include "h.imp"
+
+#include "h.deb"
+
+#include "h.bits"
+#include "h.fsx"
+
+#include "h.main"
+
+#include "h.pxexp"
+#include "h.styles"
+#include "h.colours"
+
+#include "h.frames"
+
+
+#define  XXXXX (-1)
+#define  UNKNOWN 16
+
+/* unknown frames type 16 seen - corrupt docs though */
+
+
+static int       fchaptern;
+
+static int       epochn;
+
+static int orgx;
+static int orgy;
+
+static objhdr  * cmpage;
+static objhdr  * mpage1;
+static objhdr  * mpage2;
+static objhdr  * firstpage;
+static objhdr  * csect;
+
+
+
+
+typedef struct textchunkstr
+{
+ int len;
+ int id;
+
+} textchunkstr;
+
+
+
+/* convert chapter index to createn */
+
+static int chapcn(int n)
+{
+ objhdr * obj;
+ ptrstr   ptr;
+ int      len;
+
+
+ obj=(objhdr*)(((char*)docdata)+docdata->mainpages2);
+
+ while(1)
+ {
+  xprintf("type=%d\n",obj->type);
+
+  len=obj->len0+(obj->len1<<8);
+  if(len==0) break;
+
+  ptr.anything=((char*)obj)+sizeof(objhdr);
+
+  if(obj->type==XSECT)
+  {
+   n--;
+   if(n<=0) return(ptr.sectp->createn);
+  }
+
+  obj=(objhdr*)(((char*)obj)+len);
+ }
+
+ return(0); /* never */
+}
+
+
+
+
+
+
+FILE * getifp(int dcindex,int * len,dictstr ** dcp)
+{
+ dictstr      * dc;
+ dictstr      * lt;
+ dictstr      * dc1;
+ int          * mdc;
+ FILE         * ifp;
+ int            n;
+ textchunkstr   chunk;
+ fstat          f;
+
+
+ dc=dc1=(dictstr*)(((char*)docdata)+docdata->dict1);
+ dc+=dcindex;
+
+ mdc=(int*)(((char*)docdata)+docdata->mdict1);
+ lt=(dictstr*)mdc;
+ mdc+=dcindex;
+
+ if(len) *len=*(mdc+1)-*mdc;                                                     if(dcp) *dcp=dc;     
+
+ if(!directorymode)
+ {
+  fseek(inputfp,(long int)*mdc,SEEK_SET);
+  return(inputfp);
+ }
+ else
+ {
+  n=-1;
+  while(dc1<dc)
+  {
+   if(dc1->type==DCSECT) n++;
+   dc1++;
+  }
+
+  xprintf("chapn =%d\n",n);
+
+  ifp=NULL;
+
+  if(dc->type==DCPICT)
+  {
+   if(n==0) sprintf(inputcat,".MasterChap.Story%d",dc->id);
+   else     sprintf(inputcat,".Chapter%d.Story%d",chapcn(n),dc->id);
+
+   fs_stat(inputpath,&f);
+
+   xprintf("picname=%s *len=%d fslen=%d\n",inputpath,*len,f.length);
+
+   *len=f.length;
+
+   ifp=fopen(inputpath,"rb");
+   if(!ifp) terminate("Can't open picture story.");
+  }
+  else
+  if(dc->type==DCTEXT)
+  {
+   if(n==0) strcpy(inputcat,".MasterChap.Text");
+   else     sprintf(inputcat,".Chapter%d.Text",chapcn(n));
+
+   xprintf("path=%s\n",inputpath);
+
+   ifp=fopen(inputpath,"rb");
+   if(!ifp) terminate("Can't open Text story.");
+
+   while(1)
+   {
+    if(fread(&chunk,sizeof(textchunkstr),1,ifp)!=1)
+                                       terminate("Can't text chunk header");
+
+    xprintf("chunkid %d dcid %d len=%d\n",chunk.id,dc->id,chunk.len);
+    if(chunk.id==dc->id)
+    {
+     xprintf("*len=%d\n",*len);
+     xprintf("chunk len=%d\n",chunk.len);
+     break;
+    }
+
+    if(fseek(ifp,(long int)(chunk.len-sizeof(textchunkstr)),SEEK_CUR)) 
+                                terminate("Can't seek to text chunk header");
+
+   }
+
+  }
+  else
+  {
+   terminate("Attempting to open unknown story type.");
+  }
+
+  return(ifp);
+ }
+}
+
+
+void loseifp(FILE * ifp)
+{
+
+ if(directorymode) fclose(ifp);
+
+}
+
+
+
+
+
+static void declareframecolours(void)
+{
+ objhdr * obj;
+ ptrstr   ptr;
+ void   * contents1;
+ int      len;
+
+
+ contents1=((char*)docdata)+docdata->contents1;
+
+ obj=(objhdr*)(((char*)docdata)+docdata->mainpages2);
+
+ while(1)
+ {
+  len=obj->len0+(obj->len1<<8);
+  if(len==0) break;
+
+  ptr.anything=((char*)obj)+sizeof(objhdr);
+
+  switch(obj->type)
+  {
+   case   XPAGE:
+                break;
+
+   case   XTEXT:
+                if(ptr.textp->filled) definecolour(ptr.textp->backcolour);
+                if(ptr.textp->bordercolour!=-1)
+                                      definecolour(ptr.textp->bordercolour);
+                break;
+
+   case   XPICT:
+                if(ptr.pictp->filled) definecolour(ptr.pictp->backcolour);
+                if(ptr.pictp->bordercolour!=-1)
+                                      definecolour(ptr.pictp->bordercolour);
+                break;
+
+   case   XXXXX: 
+   case  XBLANK:
+                if(ptr.blankp->filled) definecolour(ptr.blankp->backcolour);
+                if(ptr.blankp->bordercolour!=-1)
+                                      definecolour(ptr.blankp->bordercolour);
+                break;
+
+   case  UNKNOWN:
+                 break;
+
+   case  XGROUP:
+                break;
+
+   case  XGUIDE:
+                break;
+
+   case XBRANCH:
+                break;
+
+   case   XSECT:
+                break;
+
+
+        default:
+                terminate("Unknown frame type");
+                break;
+  }
+
+  obj=(objhdr*)(((char*)obj)+len);
+  if(obj>contents1) terminate("frame pointer passed contents limit");
+ }
+}
+
+
+
+
+
+void initframes(void)
+{
+ fchaptern=1;
+ epochn=-1;
+
+ declareframecolours();
+}
+
+
+
+
+
+int epoch(int offset,int master)
+{
+ if(master) offset+=epochn*docdata->contents2;
+ return(offset);
+}
+
+
+
+/* find indexed object on master page */
+
+static void * ixindex(objhdr * objs,int index,int * xtype)
+{
+ int         len;
+ ptrstr      ptr;
+ int         over;
+
+ over=0;
+
+ while(!over)
+ {
+  len=objs->len0+(objs->len1<<8);
+  if(len==0) break;
+  objs=(objhdr*)(((char*)objs)+len);
+
+  ptr.anything=((char*)objs)+sizeof(objhdr);
+
+  switch(objs->type)
+  {
+   case   XPAGE:
+   case XBRANCH:
+   case   XSECT:
+                terminate("Index not found");
+                break;
+
+   case   XTEXT:
+                over=(ptr.textp->masterindex==index);
+                break;
+
+   case   XPICT:
+                over=(ptr.pictp->masterindex==index);
+                break;
+
+   case   XXXXX: 
+   case  XBLANK:
+                over=(ptr.blankp->masterindex==index);
+                break;
+
+   case UNKNOWN:
+                break;
+
+   case  XGROUP:
+                over=(ptr.groupp->masterindex==index);
+                break;
+
+   case  XGUIDE:
+                over=(ptr.guidep->masterindex==index);
+                break;
+
+        default:
+                terminate("Unknown frame type when finding index");
+                break;
+  }
+ }
+
+ if(xtype) *xtype=objs->type;
+ return(((char*)objs)+sizeof(objhdr));
+}
+
+
+
+
+
+/* text frame on master pages  - cannot be linked on master pages */
+/* blank frame on master pages - might be text or pict in doc     */
+/* blank frame - find first doc frame based on it, determine type */
+
+
+#ifdef NEVER
+
+/* simple case, text master frame, can't involve links */
+
+static void ixtextstorys(textstr * textp,FILE * ifp,FILE * ofp,int master)
+{
+ dictstr * dc;
+ int     * mdc;
+ int       len;
+
+ if(textp->dictionaryindex>=0)
+ {
+  dc=(dictstr*)(((char*)docdata)+docdata->dict1);
+  dc+=textp->dictionaryindex;
+
+  mdc=(int*)(((char*)docdata)+docdata->mdict1);
+  mdc+=textp->dictionaryindex;
+  len=*(mdc+1)-*mdc;
+
+  if(len>=sizeof(ilinestr))
+  {
+   fseek(ifp,(long int)*mdc,SEEK_SET);
+
+   fprintf(ofp,"STORY_%x={story\n",epoch((char*)textp-(char*)docdata,master));
+
+   txwritedata(textp,master,ifp,ofp,len);
+
+   fprintf(ofp,"}\n\n");
+  }
+ }
+}
+
+
+#endif
+
+
+/* chance to prescan text story, define fields, embedded objects */
+
+static void ixchecktextstory(textstr * textp,FILE * ofp,int master)
+{
+ xprintf("ixchecktextstory in\n");
+
+ if(textp->dictionaryindex>=0)
+ {
+  txcheckstory(textp,csect,master,ofp);
+ }
+
+ xprintf("ixchecktextstory ex\n");
+}
+
+
+
+
+static void ixtextstory(textstr * textp,FILE * ofp,int master)
+{
+ int scode;
+
+ if(textp->dictionaryindex>=0)
+ {
+  scode=txstory(textp,master);
+
+  if(scode & TXSTORYFIRST)
+  {
+   txwritedata(textp,master,ofp);
+  }
+
+  if(scode & TXSTORYLAST)
+  {
+   fprintf(ofp,"CHAIN_%x={textchain\n",
+                           epoch((char*)textp-(char*)docdata,master));
+
+   txstorychain(ofp,textp,master);
+
+   fprintf(ofp,"}\n\n");
+  }
+ }
+}
+
+
+
+static void ixtext(FILE * ofp,textstr * textp,int master,int generation)
+{
+ int       topoutset;
+ int       botoutset;
+ int       leftoutset;
+ int       rightoutset;
+ textstr * mtextp;
+ int       otype;
+
+
+ if(!master && textp->master)
+ {
+  mtextp=ixindex(cmpage,textp->masterindex,&otype);
+
+  if(otype!=XTEXT) ixchecktextstory(textp,ofp,master);
+
+  fprintf(ofp,"TEXT_%x={textframe\n",
+               epoch((char*)textp-(char*)docdata,master)); 
+
+  fprintf(ofp,"{master TEXT_%x}{local 0}\n",
+               epoch((char*)mtextp-(char*)docdata,1));
+
+  fprintf(ofp,"}\n\n");
+
+  if(otype!=XTEXT) ixtextstory(textp,ofp,master);
+ }
+ else
+ {
+  leftoutset=textp->x0-textp->exx0;
+  rightoutset=textp->exx1-textp->x1;
+  topoutset=textp->exy1-textp->y1;
+  botoutset=textp->y0-textp->exy0;
+
+  ixchecktextstory(textp,ofp,master);
+
+  if(generation)
+  {
+   fprintf(ofp,"TEXT_%x_%x={textframe",generation,
+                               epoch((char*)textp-(char*)docdata,master));
+  }
+  else
+  {
+   fprintf(ofp,"TEXT_%x={textframe",
+                               epoch((char*)textp-(char*)docdata,master));
+  }
+
+  fprintf(ofp,"{lock %d} {spread 0}\n",textp->locked);
+  fprintf(ofp,"{fillcolour %s}\n",colourstring(textp->backcolour,
+                                           textp->overprint,!textp->filled));
+  fprintf(ofp,"{radius 0}\n");
+  fprintf(ofp,"{columns 1}{gutterwidth 14173}");
+  fprintf(ofp,"{columnguides 0 {thickness 2834} ");
+  fprintf(ofp,"{colourvalue COL_01 0x10000 0}}\n"); 
+  fprintf(ofp,"{vertalign 0}\n");
+  fprintf(ofp,"{firstline 1}\n");
+
+
+  if(textp->border0!=0xFF || textp->border1!=0xFF || 
+     textp->border2!=0xFF || textp->border3!=0xFF)
+  {
+   fprintf(ofp,"{frameborder \"1_Plain\" {border 1 0x%x {colourvalue %s} {w %d}}{shadow 0 0x3 {colourvalue COL_01 0x10000 0} {w 5669}}}\n",
+        (textp->border0!=0xFF)| ((textp->border2!=0xFF)<<1) |
+   ((textp->border3!=0xFF)<<2)| ((textp->border1!=0xFF)<<3),
+          textp->bordercolour!=-1?colourstring(textp->bordercolour,0,0):
+                                "COL_01 0x10000 0",borderwidth
+
+         );
+  }
+
+  fprintf(ofp,"{inset %d}\n",MAX(0,MIN(textp->hinset,textp->vinset)));
+  fprintf(ofp,"{textflow 3 %d %d}\n",textp->repel?1:0,
+            MAX(0,MIN(MIN(topoutset,botoutset),MIN(leftoutset,rightoutset))));
+
+  fprintf(ofp,"{fcurve {box {x %d}\n",textp->x0-orgx);
+  fprintf(ofp,"{y %d}\n",orgy-textp->y1);
+  fprintf(ofp,"{w %d}\n",textp->x1-textp->x0);
+  fprintf(ofp,"{h %d}\n",textp->y1-textp->y0);
+  fprintf(ofp,"}}\n");
+
+  if(textp->hinset!=textp->vinset || textp->hinset<0)
+  {
+   fprintf(ofp,"{icurve {box {x %d}\n",textp->x0-orgx+textp->hinset);
+   fprintf(ofp,"{y %d}\n",orgy-textp->y1+textp->vinset);
+   fprintf(ofp,"{w %d}\n",textp->x1-textp->x0-2*textp->hinset);
+   fprintf(ofp,"{h %d}\n",textp->y1-textp->y0-2*textp->vinset);
+   fprintf(ofp,"}}\n");
+  }
+
+  if(leftoutset!=rightoutset || leftoutset!=topoutset || 
+     leftoutset!=botoutset   || leftoutset<0)
+  {
+   fprintf(ofp,"{ocurve {box {x %d}\n",textp->exx0-orgx);
+   fprintf(ofp,"{y %d}\n",orgy-textp->exy1);
+   fprintf(ofp,"{w %d}\n",textp->exx1-textp->exx0);
+   fprintf(ofp,"{h %d}\n",textp->exy1-textp->exy0);
+   fprintf(ofp,"}}\n");
+  }
+
+  fprintf(ofp,"{angle 0x0}\n");
+  fprintf(ofp,"{skew 0x0}\n");
+  fprintf(ofp,"}\n\n");
+
+  ixtextstory(textp,ofp,master);
+ }
+}
+
+
+
+
+
+
+static void ixpictpicture(pictstr * pictp,FILE * ofp,int master,int generation)
+{
+ int       tag;
+
+
+ if(pictureseen(pictp->dictionaryindex,&tag))
+ {
+  if(generation) /* must always have been seen */
+  {
+   fprintf(ofp,"PICTURE_%x_%x=PICTURE_%x\n",generation,
+               epoch((char*)pictp-(char*)docdata,master),tag);
+  }
+  else
+  {
+   fprintf(ofp,"PICTURE_%x=PICTURE_%x\n",
+               epoch((char*)pictp-(char*)docdata,master),tag);
+  }
+ }
+ else
+ {
+  fprintf(ofp,"PICTURE_%x={picture\n",
+                 epoch((char*)pictp-(char*)docdata,master));
+
+  picturerecord(pictp->dictionaryindex,
+                 epoch((char*)pictp-(char*)docdata,master));
+
+  dxwritedata(ofp,pictp->dictionaryindex);
+ }
+}
+
+
+/* pict x & y scale are inverse of real scales */
+
+
+static void ixpictdata(FILE * ofp,pictstr * pictp)
+{
+ transformstr    tr1;
+ transformstr    tr2;
+ transformstr    tr3;
+ transformbitstr bits;
+
+
+ tr_setidentity(&tr1);
+ tr_setrotationa(&tr1,pictp->angle);
+
+ tr_setscale(&tr2,pictp->xscale,0x10000,pictp->yscale,0x10000);
+
+ tr_multiply(&tr3,&tr1,&tr2);
+ tr_getbits(&tr3,&bits);
+
+
+ fprintf(ofp,"{picturedata\n");
+ fprintf(ofp,"{lockmode 0}\n");
+ fprintf(ofp,"{aspectlock 1}\n");
+ fprintf(ofp,"{autoscale 0}\n");
+ fprintf(ofp,"{hide 0}\n");
+ fprintf(ofp,"{bottomleft 1}\n");
+ fprintf(ofp,"{x %d}\n",-pictp->xshift);
+ fprintf(ofp,"{y %d}\n",pictp->yshift);
+
+
+ fprintf(ofp,"{scale 0x%x}\n",bits.yscale);
+ fprintf(ofp,"{aspect 0x%x}\n",scale(0x10000,bits.xscale,bits.yscale));
+ fprintf(ofp,"{angle 0x%x}\n",bits.angle);
+ fprintf(ofp,"{skew 0x%x}\n",(int)((180*atan(((double)bits.skewxy)/((double)0x10000))/PI)*0x10000));
+ fprintf(ofp,"{tile 0 0 0}}\n");
+}
+
+
+
+static void ixpict(FILE * ofp,pictstr * pictp,int len,
+                                              int master,int generation)
+{
+ int       topoutset;
+ int       botoutset;
+ int       leftoutset;
+ int       rightoutset;
+ int     * irregular;
+ int     * v;
+ int     * lt;
+ int       code;
+ int       x;
+ int       y;
+ pictstr * mpictp;
+ int       otype;
+
+ irregular=NULL;
+
+ if(len>sizeof(pictstr))
+ {
+  v=(int*)(((char*)pictp)+sizeof(pictstr));
+  lt=(int*)(((char*)pictp)+len);
+
+  while(v<lt)
+  {
+   code=*v;
+   if((code & 0xFF)==1)
+   {
+    irregular=v;
+    break;
+   }
+   else
+   {
+    v=(int*)(((char*)v)+((code & 0xFFFFFF00)>>8)-sizeof(int));
+   }
+  }
+ }
+
+ if(!master && pictp->master)
+ {
+/*  xprintf("pict ixi"); */
+
+  mpictp=ixindex(cmpage,pictp->masterindex,&otype);
+
+  fprintf(ofp,"PICT_%x={pictframe\n",
+               epoch((char*)pictp-(char*)docdata,master)); 
+
+  if(otype==XPICT)
+  {
+   fprintf(ofp,"{master PICT_%x}{local 0}\n",
+               epoch((char*)mpictp-(char*)docdata,1));
+
+   fprintf(ofp,"}\n\n");
+
+   fprintf(ofp,"PICTURE_%x=PICTURE_%x\n\n",
+                   epoch((char*)pictp-(char*)docdata,master),
+                   epoch((char*)mpictp-(char*)docdata,1));
+  }
+  else
+  {
+   fprintf(ofp,"{master TEXT_%x}{local 0}\n",
+               epoch((char*)mpictp-(char*)docdata,1));
+
+   ixpictdata(ofp,pictp);
+
+   fprintf(ofp,"}\n\n");
+
+   ixpictpicture(pictp,ofp,master,0);
+  }
+ }
+ else
+ {
+  leftoutset=pictp->x0-pictp->exx0;
+  rightoutset=pictp->exx1-pictp->x1;
+  topoutset=pictp->exy1-pictp->y1;
+  botoutset=pictp->y0-pictp->exy0;
+
+  if(generation)
+  {
+   fprintf(ofp,"PICT_%x_%x={pictframe",generation,
+                            epoch((char*)pictp-(char*)docdata,master));
+
+  }
+  else
+  {
+   fprintf(ofp,"PICT_%x={pictframe",
+                         epoch((char*)pictp-(char*)docdata,master)); 
+  }
+  fprintf(ofp,"{lock %d} {spread 0}\n",pictp->locked);
+  fprintf(ofp,"{fillcolour %s}\n",colourstring(pictp->backcolour,
+                                            pictp->overprint,!pictp->filled));
+  fprintf(ofp,"{radius 0}\n");
+
+
+
+  if(pictp->border0!=0xFF || pictp->border1!=0xFF || 
+     pictp->border2!=0xFF || pictp->border3!=0xFF)
+  {
+   fprintf(ofp,"{frameborder \"1_Plain\" {border 1 0x%x {colourvalue %s} {w %d}}{shadow 0 0x3 {colourvalue COL_01 0x10000 0} {w 5669}}}\n",
+        (pictp->border0!=0xFF) | ((pictp->border2!=0xFF)<<1) |
+   ((pictp->border3!=0xFF)<<2) | ((pictp->border1!=0xFF)<<3),
+          pictp->bordercolour!=-1?colourstring(pictp->bordercolour,0,0):
+                                "COL_01 0x10000 0",borderwidth
+
+         );
+  }
+
+
+
+  fprintf(ofp,"{inset %d}\n",MIN(pictp->hinset,pictp->vinset));
+  fprintf(ofp,"{textflow 3 %d %d}\n",pictp->repel?1:0,
+       MAX(0,MIN(MIN(topoutset,botoutset),MIN(leftoutset,rightoutset))));
+
+  if(irregular)
+  {
+   v=irregular;
+   code=*v;
+   lt=(int*)(((char*)v)+((code & 0xFFFFFF00)>>8)-sizeof(int));
+   v++;
+
+   fprintf(ofp,"{fcurve {path \n");
+   while(v<lt)
+   {
+    code=*v++;
+    switch(code)
+    {
+     case 0:
+            fprintf(ofp,"{end}\n");
+            break;
+
+     case 2:
+            x=(*v++)+(pictp->x0-orgx+pictp->x1-orgx)/2;
+            y=(orgy-pictp->y1+orgy-pictp->y0)/2-*v++;
+            fprintf(ofp,"{move %d %d}\n",x,y);
+            break;
+
+     case 5:
+            fprintf(ofp,"{close}\n");
+            break;
+
+     case 6: // curve
+            break;
+
+     case 8:
+            x=(*v++)+(pictp->x0-orgx+pictp->x1-orgx)/2;
+            y=(orgy-pictp->y1+orgy-pictp->y0)/2-*v++;
+            fprintf(ofp,"{draw %d %d}\n",x,y);
+            break;
+    }
+   }
+   fprintf(ofp,"}}\n");
+
+  }
+  else
+  {
+   fprintf(ofp,"{fcurve {box {x %d}\n",pictp->x0-orgx);
+   fprintf(ofp,"{y %d}\n",orgy-pictp->y1);
+   fprintf(ofp,"{w %d}\n",pictp->x1-pictp->x0);
+   fprintf(ofp,"{h %d}\n",pictp->y1-pictp->y0);
+   fprintf(ofp,"}}\n");
+  }
+
+  if(pictp->hinset!=pictp->vinset)
+  {
+   fprintf(ofp,"{icurve {box {x %d}\n",pictp->x0-orgx+pictp->hinset);
+   fprintf(ofp,"{y %d}\n",orgy-pictp->y1+pictp->vinset);
+   fprintf(ofp,"{w %d}\n",pictp->x1-pictp->x0-2*pictp->hinset);
+   fprintf(ofp,"{h %d}\n",pictp->y1-pictp->y0-2*pictp->vinset);
+   fprintf(ofp,"}}\n");
+  }
+
+  if(!irregular)
+  {
+   if(leftoutset!=rightoutset || leftoutset!=topoutset || 
+      leftoutset!=botoutset   || leftoutset<0)
+   {
+    fprintf(ofp,"{ocurve {box {x %d}\n",pictp->exx0-orgx);
+    fprintf(ofp,"{y %d}\n",orgy-pictp->exy1);
+    fprintf(ofp,"{w %d}\n",pictp->exx1-pictp->exx0);
+    fprintf(ofp,"{h %d}\n",pictp->exy1-pictp->exy0);
+    fprintf(ofp,"}}\n");
+   }
+  }
+
+  fprintf(ofp,"{angle 0x0}\n");
+  fprintf(ofp,"{skew 0x0}\n");
+
+  ixpictdata(ofp,pictp);
+
+  fprintf(ofp,"}\n\n");
+
+  ixpictpicture(pictp,ofp,master,generation);
+ }
+}
+
+
+
+/* find the first document frame based on the masterindex object */
+
+
+static objhdr * findfirstdoc(int index)
+{
+ int         len;
+ ptrstr      ptr;
+ int         over;
+ objhdr    * obj;
+
+
+ obj=firstpage;
+
+ over=0;
+
+ while(!over)
+ {
+  len=obj->len0+(obj->len1<<8);
+  if(len==0) break;
+  obj=(objhdr*)(((char*)obj)+len);
+
+  ptr.anything=((char*)obj)+sizeof(objhdr);
+
+  switch(obj->type)
+  {
+   case   XPAGE:
+                break;
+
+   case XBRANCH:
+   case   XSECT:
+                obj=NULL;
+                over=1;
+                break;
+
+   case   XTEXT:
+                over=(ptr.textp->masterindex==index);
+                break;
+
+   case   XPICT:
+                over=(ptr.pictp->masterindex==index);
+                break;
+
+   case   XXXXX: 
+   case  XBLANK:
+                over=(ptr.blankp->masterindex==index);
+                break;
+
+   case UNKNOWN:
+                break;
+
+   case  XGROUP:
+                over=(ptr.groupp->masterindex==index);
+                break;
+
+   case  XGUIDE:
+                over=(ptr.guidep->masterindex==index);
+                break;
+
+        default:
+                terminate("Unknown frame type when finding index");
+                break;
+  }
+ }
+
+ return(obj);
+}
+
+
+
+
+
+
+/* these can be chained, and have dictionary data */
+/* but the dictionaries are empty                 */
+/* assume that they are linked in the order seen  */
+
+
+static void ixblank(FILE * ofp,blankstr * blankp,int master,int generation)
+{          
+ int        topoutset;
+ int        botoutset;
+ int        leftoutset;
+ int        rightoutset;
+ blankstr * mblankp;
+ objhdr   * obj;
+
+
+ if(!master && blankp->master)
+ {
+  mblankp=ixindex(cmpage,blankp->masterindex,NULL);
+
+  fprintf(ofp,"TEXT_%x={textframe\n",
+              epoch((char*)blankp-(char*)docdata,master));
+
+  fprintf(ofp,"{master TEXT_%x}{local 0}\n",
+              epoch((char*)mblankp-(char*)docdata,1));
+
+  fprintf(ofp,"}\n\n");
+
+  txblank(blankp,master);
+ }
+ else
+ {
+  leftoutset=blankp->x0-blankp->exx0;
+  rightoutset=blankp->exx1-blankp->x1;
+  topoutset=blankp->exy1-blankp->y1;
+  botoutset=blankp->y0-blankp->exy0;
+
+  if(generation)
+  {
+   fprintf(ofp,"TEXT_%x_%x={textframe",generation,
+                                epoch((char*)blankp-(char*)docdata,master)); 
+  }
+  else
+  {
+   fprintf(ofp,"TEXT_%x={textframe",
+                                epoch((char*)blankp-(char*)docdata,master)); 
+  }
+  fprintf(ofp,"{lock %d} {spread 0}\n",blankp->locked);
+  fprintf(ofp,"{fillcolour %s}\n",colourstring(blankp->backcolour,
+                                           blankp->overprint,!blankp->filled));
+  fprintf(ofp,"{radius 0}\n");
+  fprintf(ofp,"{columns 1}{gutterwidth 14173}");
+  fprintf(ofp,"{columnguides 0 {thickness 2834} ");
+  fprintf(ofp,"{colourvalue COL_01 0x10000 0}}\n"); 
+  fprintf(ofp,"{vertalign 0}\n");
+  fprintf(ofp,"{firstline 1}\n");
+  if(master)
+  {
+   obj=findfirstdoc(blankp->masterindex);
+ /*  if(obj && obj->type!=XPICT) */
+   {
+    fprintf(ofp,"{autolink 1}\n");
+   }
+  }
+
+  if(blankp->border0!=0xFF || blankp->border1!=0xFF || 
+     blankp->border2!=0xFF || blankp->border3!=0xFF)
+  {
+   fprintf(ofp,"{frameborder \"1_Plain\" {border 1 0x%x {colourvalue %s} {w %d}}{shadow 0 0x3 {colourvalue COL_01 0x10000 0} {w 5669}}}\n",
+        ((blankp->border0!=0xFF)<<0) | ((blankp->border2!=0xFF)<<1) |
+   ((blankp->border3!=0xFF)<<2) | ((blankp->border1!=0xFF)<<3),
+          blankp->bordercolour!=-1?colourstring(blankp->bordercolour,0,0):
+                                "COL_01 0x10000 0",borderwidth
+
+         );
+  }
+
+
+  fprintf(ofp,"{inset %d}\n",MAX(0,MIN(blankp->hinset,blankp->vinset)));
+  fprintf(ofp,"{textflow 3 %d %d}\n",blankp->repel?1:0,
+           MAX(0,MIN(MIN(topoutset,botoutset),MIN(leftoutset,rightoutset))));
+
+  fprintf(ofp,"{fcurve {box {x %d}\n",blankp->x0-orgx);
+  fprintf(ofp,"{y %d}\n",orgy-blankp->y1);
+  fprintf(ofp,"{w %d}\n",blankp->x1-blankp->x0);
+  fprintf(ofp,"{h %d}\n",blankp->y1-blankp->y0);
+  fprintf(ofp,"}}\n");
+
+
+  if(blankp->hinset!=blankp->vinset || blankp->hinset<0)
+  {
+   fprintf(ofp,"{icurve {box {x %d}\n",blankp->x0-orgx+blankp->hinset);
+   fprintf(ofp,"{y %d}\n",orgy-blankp->y1+blankp->vinset);
+   fprintf(ofp,"{w %d}\n",blankp->x1-blankp->x0-2*blankp->hinset);
+   fprintf(ofp,"{h %d}\n",blankp->y1-blankp->y0-2*blankp->vinset);
+   fprintf(ofp,"}}\n");
+  }
+
+  if(leftoutset!=rightoutset || leftoutset!=topoutset || 
+     leftoutset!=botoutset   || leftoutset<0)
+  {
+   fprintf(ofp,"{ocurve {box {x %d}\n",blankp->exx0-orgx);
+   fprintf(ofp,"{y %d}\n",orgy-blankp->exy1);
+   fprintf(ofp,"{w %d}\n",blankp->exx1-blankp->exx0);
+   fprintf(ofp,"{h %d}\n",blankp->exy1-blankp->exy0);
+   fprintf(ofp,"}}\n");
+  }
+
+  fprintf(ofp,"{angle 0x0}\n");
+  fprintf(ofp,"{skew 0x0}\n");
+  fprintf(ofp,"}\n\n");
+
+  txblank(blankp,master);
+ }
+}
+
+
+
+
+
+static void ixguide(FILE * fp,guidestr * guidep,int master)
+{
+ int        seq;
+ int        mseq;
+ guidestr * mguidep;
+
+ seq=epoch((char*)guidep-(char*)docdata,master);
+
+ if(!master && guidep->master)
+ {
+  mguidep=ixindex(cmpage,guidep->masterindex,NULL);
+
+  mseq=epoch((char*)mguidep-(char*)docdata,1);
+
+  fprintf(fp,"GLINE_%x={pageguideline\n",seq++);
+  fprintf(fp,"{master GLINE_%x}{local 0}\n",mseq++);
+  fprintf(fp,"}\n\n");
+
+  fprintf(fp,"GLINE_%x={pageguideline\n",seq++);
+  fprintf(fp,"{master GLINE_%x}{local 0}\n",mseq++);
+  fprintf(fp,"}\n\n");
+
+  fprintf(fp,"GLINE_%x={pageguideline\n",seq++);
+  fprintf(fp,"{master GLINE_%x}{local 0}\n",mseq++);
+  fprintf(fp,"}\n\n");
+
+  fprintf(fp,"GLINE_%x={pageguideline\n",seq++);
+  fprintf(fp,"{master GLINE_%x}{local 0}\n",mseq++);
+  fprintf(fp,"}\n\n");
+ }
+ else
+ {
+  fprintf(fp,"GLINE_%x={pageguideline",seq++); 
+  fprintf(fp,"{lock %d} {spread 0}\n",guidep->locked);
+  fprintf(fp,"{x %d}",guidep->x0-orgx);
+  fprintf(fp,"}\n\n");
+
+
+  fprintf(fp,"GLINE_%x={pageguideline",seq++); 
+  fprintf(fp,"{lock %d} {spread 0}\n",guidep->locked);
+  fprintf(fp,"{x %d}",guidep->x1-orgx);
+  fprintf(fp,"}\n\n");
+
+
+  fprintf(fp,"GLINE_%x={pageguideline",seq++); 
+  fprintf(fp,"{lock %d} {spread 0}\n",guidep->locked);
+  fprintf(fp,"{y %d}",orgy-guidep->y0);
+  fprintf(fp,"}\n\n");
+
+
+  fprintf(fp,"GLINE_%x={pageguideline",seq++); 
+  fprintf(fp,"{lock %d} {spread 0}\n",guidep->locked);
+  fprintf(fp,"{y %d}",orgy-guidep->y1);
+  fprintf(fp,"}\n\n");
+ }
+}
+
+
+
+
+
+
+
+
+
+static void ixbranch(FILE * fp,branchstr * branchp)
+{
+
+ USE(fp);
+ USE(branchp);
+
+}
+
+
+
+
+/* is this frame the last in the group */
+
+static void ixgroup(objhdr * objs,int tlevel,int groupn,FILE * ofp,int master)
+{
+ objhdr   * obj;
+ int        len;
+ ptrstr     ptr;
+ groupstr * groupp=NULL;
+ groupstr * mgroupp;
+
+ obj=objs;
+
+ while(1)
+ {
+  len=obj->len0+(obj->len1<<8);
+  if(len==0) break;
+
+  ptr.anything=((char*)obj)+sizeof(objhdr);
+
+  if(obj->type==XTEXT)
+  {
+   if(ptr.textp->level>tlevel && ptr.textp->grouped && 
+                                 ptr.textp->groupn==groupn) return;
+  }
+  else
+  if(obj->type==XPICT)
+  {
+   if(ptr.pictp->level>tlevel && ptr.pictp->grouped &&
+                                 ptr.pictp->groupn==groupn) return;
+  }
+  else
+  if(obj->type==XBLANK || obj->type==XXXXX)
+  {
+   if(ptr.blankp->level>tlevel && ptr.blankp->grouped &&
+                                  ptr.blankp->groupn==groupn) return;
+  }
+  else
+  if(obj->type==XGUIDE)
+  {
+   // not having anything to do with grouped guide frames
+  }
+  else
+  if(obj->type==XGROUP)
+  {
+   // not having anything to do with grouped group frames
+   if(ptr.groupp->groupn==groupn) groupp=ptr.groupp;
+  }
+  else
+  if(obj->type==UNKNOWN)
+  {
+
+  }
+  else
+  {
+   break;
+  }
+
+  obj=(objhdr*)(((char*)obj)+len);
+ }
+
+ fprintf(ofp,"\nGROUP_%x={group",epoch((char*)groupp-(char*)docdata,master));
+
+ if(!master && groupp->master)
+ {
+/*  xprintf("grup ixi"); */
+
+  mgroupp=ixindex(cmpage,groupp->masterindex,NULL);
+
+  fprintf(ofp,"{master GROUP_%x}{local 0}\n",
+                                 epoch((char*)mgroupp-(char*)docdata,1));
+ }
+
+ obj=objs;
+
+ while(1)
+ {
+  len=obj->len0+(obj->len1<<8);
+  if(len==0) break;
+
+  ptr.anything=((char*)obj)+sizeof(objhdr);
+
+  if(obj->type==XTEXT)
+  {
+   if(ptr.textp->grouped && ptr.textp->groupn==groupn)
+   {
+    fprintf(ofp," TEXT_%x",epoch((char*)ptr.textp-(char*)docdata,master)); 
+   }
+  }
+  else
+  if(obj->type==XPICT)
+  {
+   if(ptr.pictp->grouped && ptr.pictp->groupn==groupn)
+   {
+    fprintf(ofp," PICT_%x",epoch((char*)ptr.pictp-(char*)docdata,master));
+   }
+  }
+  else
+  if(obj->type==XBLANK || obj->type==XXXXX)
+  {
+   if(ptr.blankp->grouped && ptr.blankp->groupn==groupn)
+   {
+    fprintf(ofp," TEXT_%x",epoch((char*)ptr.blankp-(char*)docdata,master));
+   }
+  }
+  else
+  if(obj->type==XGUIDE)
+  {
+   // not having anything to do with grouped guide frames
+  }
+  else
+  if(obj->type==XGROUP)
+  {
+   // not having anything to do with grouped group frames
+
+  }
+  else
+  if(obj->type==UNKNOWN)
+  {
+
+  }
+  else
+  {
+   break;
+  }
+
+  obj=(objhdr*)(((char*)obj)+len);
+ }
+
+ fprintf(ofp,"}\n\n");
+}
+
+
+
+
+static void ixpage(FILE * ofp,objhdr * objs,int master)
+{
+ int         level;
+ ptrstr      ptr;
+ objhdr    * obj;
+ int         over;
+ int         len;
+
+
+ ptr.anything=((char*)objs)+sizeof(objhdr);
+
+ if(!master) fprintf(ofp,"\nPAGE_%x={page}\n\n",
+                      epoch((char*)ptr.pagep-(char*)docdata,master));
+
+ orgx=ptr.pagep->x0+ptr.pagep->bleed;
+ orgy=ptr.pagep->y1-ptr.pagep->bleed;
+
+
+ objs=(objhdr*)(((char*)objs)+(objs->len0+(objs->len1<<8)));
+ over=0;
+ level=0;
+
+ while(!over)
+ {
+  obj=objs;
+
+   xprintf("level %d",level);
+
+  while(1)
+  {
+   len=obj->len0+(obj->len1<<8);
+   if(len==0)
+   {
+    over=1;
+    break;
+   }
+
+   ptr.anything=((char*)obj)+sizeof(objhdr);
+
+   if(obj->type==XTEXT)
+   {
+    if(ptr.textp->level==level)
+    {
+     if(!isembeded(ptr.textp->embedtag,obj)) 
+     {
+      ixtext(ofp,ptr.textp,master,0);
+      if(ptr.textp->grouped) ixgroup(objs,level,ptr.textp->groupn,ofp,master);
+     }
+     break;
+    }
+   }
+   else
+   if(obj->type==XPICT)
+   {
+    if(ptr.pictp->level==level)
+    {
+     if(!isembeded(ptr.pictp->embedtag,obj))
+     {
+      ixpict(ofp,ptr.pictp,len-sizeof(objhdr),master,0);
+      if(ptr.pictp->grouped) ixgroup(objs,level,ptr.pictp->groupn,ofp,master);
+     }
+     break;
+    }
+   }
+   else
+   if(obj->type==XBLANK || obj->type==XXXXX)
+   {
+    if(ptr.blankp->level==level)
+    {
+     if(!isembeded(ptr.blankp->embedtag,obj))
+     {
+      ixblank(ofp,ptr.blankp,master,0);
+      if(ptr.blankp->grouped)ixgroup(objs,level,ptr.blankp->groupn,ofp,master);
+     }
+     break;
+    }
+   }
+   else
+   if(obj->type==XGUIDE)
+   {
+    if(ptr.guidep->level==level)
+    {
+     ixguide(ofp,ptr.guidep,master);
+     // not having anything to do with grouped guide frames
+
+     break;
+    }
+   }
+   else
+   if(obj->type==XGROUP)
+   {
+    if(ptr.blankp->level==level)
+    {
+     if(!isembeded(ptr.groupp->embedtag,obj))
+     {
+
+      // not having anything to do with grouped group frames
+     }
+     break;
+    }
+   }
+   else
+   if(obj->type==UNKNOWN)
+   {
+
+   }
+   else
+   {
+    over=1;
+    break;
+   }
+
+   obj=(objhdr*)(((char*)obj)+len);
+  }
+
+  level++;
+ }
+
+}
+
+
+
+static void ixfindmp(int mpindex,objhdr ** mpage1,objhdr ** mpage2)
+{
+ objhdr * obj;
+ ptrstr   ptr;
+ void   * mainpages1;
+ int      len;
+ int      over;
+ int      index;
+
+
+ mainpages1=((char*)docdata)+docdata->mainpages1;
+
+ obj=(objhdr*)(((char*)docdata)+docdata->masterpages1);
+
+ index=0;
+
+ over=0;
+
+ *mpage1=*mpage2=NULL;
+
+ while(!over)
+ {
+  len=obj->len0+(obj->len1<<8);
+  if(len==0) break;
+
+  ptr.anything=((char*)obj)+sizeof(objhdr);
+
+  switch(obj->type)
+  {
+   case   XPAGE:
+                if(index==mpindex)
+                {
+                 *mpage1=obj;
+                }
+                else
+                if(index==(mpindex+1))
+                {
+                 if(((pagestr*)((char*)(*mpage1)+sizeof(objhdr)))->y1==
+                                                           ptr.pagep->y1)
+                 {
+                  *mpage2=obj;
+                 }
+                 over=1;
+                }
+
+                index++;
+                break;
+
+   case   XXXXX: 
+   case UNKNOWN:
+   case   XTEXT:
+   case   XPICT:
+   case  XBLANK:
+   case  XGROUP:
+   case  XGUIDE:
+                break;
+
+   case XBRANCH:
+                break;
+
+   case   XSECT:
+                break;
+
+        default:
+                terminate("Unknown frame type");
+                break;
+  }
+
+  obj=(objhdr*)(((char*)obj)+len);
+  if(obj>mainpages1) break;
+ }
+}
+
+
+
+
+void embedframe(int generation,embedstr * embed,textstr * textp,int master,FILE * ofp)
+{
+ objhdr * obj;
+ int      len;
+ ptrstr   ptr;
+ objhdr * limit;
+
+
+ if(master)
+ {
+  obj=mpage1;
+  limit=(objhdr*)(((char*)docdata)+docdata->mainpages1);
+ }
+ else
+ {
+  obj=firstpage;
+  limit=(objhdr*)(((char*)docdata)+docdata->contents1);
+ }
+
+ xprintf("embed master %d\n",master);
+
+
+ while(1)
+ {
+  len=obj->len0+(obj->len1<<8);
+  if(len==0)
+  {
+   break;
+  }
+
+  ptr.anything=((char*)obj)+sizeof(objhdr);
+
+  xprintf("type %x etag %d xtag %d\n",obj->type,embed->embedtag,ptr.textp->embedtag);
+
+  if(obj->type==XTEXT)
+  {
+   if(ptr.textp->embedtag==embed->embedtag) 
+   {
+    ixtext(ofp,ptr.textp,master,generation);
+    /* embedrecord(obj,embed->embedtag); */
+    break;
+   }
+  }
+  else
+  if(obj->type==XPICT)
+  {
+   if(ptr.pictp->embedtag==embed->embedtag)
+   {
+    ixpict(ofp,ptr.pictp,len-sizeof(objhdr),master,generation);
+    /* embedrecord(obj,embed->embedtag); */
+    break;
+   }
+  }
+  else
+  if(obj->type==XBLANK || obj->type==XXXXX)
+  {
+   if(ptr.blankp->embedtag==embed->embedtag)
+   {
+    ixblank(ofp,ptr.blankp,master,generation);
+    /* embedrecord(obj,embed->embedtag); */
+    break;
+   }
+  }
+  else
+  if(obj->type==XGUIDE)
+  {
+   if(ptr.guidep->embedtag==embed->embedtag)
+   {
+    // not having anything to do with embeded guide frames
+
+    break;
+   }
+  }
+  else
+  if(obj->type==XGROUP && ptr.groupp->embedtag==embed->embedtag)
+  {
+
+  }
+  else
+  if(obj->type==XPAGE)
+  {
+
+  }
+  else
+  if(obj->type==UNKNOWN)
+  {
+
+  }
+  else
+  {
+   break;
+  }
+
+  obj=(objhdr*)(((char*)obj)+len);
+  if(obj>=limit)
+  {
+   terminate("Embeded frame not found");
+  }
+ }
+
+ xprintf("embed ex");
+}
+
+
+
+
+
+void embedlink(int generation,embedstr * embed,textstr * textp,int master,FILE * ofp)
+{
+ objhdr * obj;
+ int      len;
+ ptrstr   ptr;
+
+
+ if(master) obj=mpage1;
+ else       obj=firstpage;
+
+ while(1)
+ {
+  len=obj->len0+(obj->len1<<8);
+  if(len==0)
+  {
+   break;
+  }
+
+  ptr.anything=((char*)obj)+sizeof(objhdr);
+
+  if(obj->type==XTEXT)
+  {
+   if(ptr.textp->embedtag==embed->embedtag) 
+   {
+    if(generation)
+    {
+     fprintf(ofp,"{embed TEXT_%x_%x}\n",generation,
+                  epoch((char*)ptr.textp-(char*)docdata,master)); 
+    }
+    else
+    {
+     fprintf(ofp,"{embed TEXT_%x}\n",
+                  epoch((char*)ptr.textp-(char*)docdata,master)); 
+    }
+    break;
+   }
+  }
+  else
+  if(obj->type==XPICT)
+  {
+   if(ptr.pictp->embedtag==embed->embedtag)
+   {
+    if(generation)
+    {
+     fprintf(ofp,"{embed PICT_%x_%x}\n",generation,
+                  epoch((char*)ptr.pictp-(char*)docdata,master));
+    }
+    else
+    {
+     fprintf(ofp,"{embed PICT_%x}\n",
+                  epoch((char*)ptr.pictp-(char*)docdata,master));
+    }
+    break;
+   }
+  }
+  else
+  if(obj->type==XBLANK || obj->type==XXXXX)
+  {
+   if(ptr.blankp->embedtag==embed->embedtag)
+   {
+    if(generation)
+    {
+     fprintf(ofp,"{embed TEXT_%x_%x}\n",generation,
+                  epoch((char*)ptr.blankp-(char*)docdata,master));
+    }
+    else
+    {
+     fprintf(ofp,"{embed TEXT_%x}\n",
+                  epoch((char*)ptr.blankp-(char*)docdata,master));
+    }
+    break;
+   }
+  }
+  else
+  if(obj->type==XGUIDE)
+  {
+   if(ptr.guidep->embedtag==embed->embedtag)
+   {
+    // not having anything to do with embeded guide frames
+
+    break;
+   }
+  }
+  else
+  if(obj->type==XGROUP && ptr.groupp->embedtag==embed->embedtag)
+  {
+
+  }
+  else
+  if(obj->type==XPAGE)
+  {
+
+  }
+  else
+  if(obj->type==UNKNOWN)
+  {
+
+
+  }
+  else
+  {
+   break;
+  }
+
+  obj=(objhdr*)(((char*)obj)+len);
+ }
+}
+
+
+
+
+
+
+
+
+
+
+static void ixsect(FILE * ofp,sectstr * sectp)
+{
+ int      seq;
+ ptrstr   ptr;
+
+ txstoryflush(ofp,0);
+ txstoryclear();
+
+ epochn++;
+
+
+ seq=epoch((char*)sectp-(char*)docdata,1);
+
+ ixfindmp(sectp->mpindex,&mpage1,&mpage2);
+
+ if(!mpage1) terminate("Failed to find master page.");
+
+/* xprintf("ixfindmp %x %x\n",mpage1,mpage2); */
+
+ fprintf(ofp,"\nCHAP_%x={chapter ",seq);
+
+ ptr.anything=((char*)mpage1)+sizeof(objhdr);
+ fprintf(ofp,"{papersize \"A4\" 1 {w %d} {h %d}",
+        ptr.pagep->x1-ptr.pagep->x0-2*ptr.pagep->bleed,
+        ptr.pagep->y1-ptr.pagep->y0-2*ptr.pagep->bleed);
+
+ fprintf(ofp,"{sideways 0}}\n");
+ fprintf(ofp,"{omitheader 0} {omitfooter 0}\n");
+ fprintf(ofp,"{chapternumber %d}\n",fchaptern++);
+ fprintf(ofp,"{pagenumberformat 2}\n");
+ fprintf(ofp,"{startonleft %d}\n",!sectp->startonright);
+
+ if(sectp->startpage) fprintf(ofp,"{pagestartnumber %d}\n",sectp->startpagen);
+
+ fprintf(ofp,"}\n\n");
+
+ fprintf(ofp,"\nPAGE_%x={masterpage {colourvalue COL_02 0x10000 0}}\n\n",
+                                                                       seq+1);
+
+ ixpage(ofp,mpage1,1);
+
+ if(mpage2)
+ {
+  fprintf(ofp,"\nPAGE_%x={masterpage {colourvalue COL_02 0x10000 0}}\n\n",
+                                                                        seq+2);
+  ixpage(ofp,mpage2,2);
+ }
+
+ txstoryflush(ofp,1);
+ txstoryclear();
+
+ if(sectp->startonright && mpage2) cmpage=mpage2;
+ else                              cmpage=mpage1;
+}
+
+
+
+
+
+void dumpframes(void)
+{
+ objhdr * obj;
+ ptrstr   ptr;
+ void   * contents1;
+ int      len;
+
+
+ contents1=((char*)docdata)+docdata->contents1;
+
+ obj=(objhdr*)(((char*)docdata)+docdata->mainpages2);
+
+ while(1)
+ {
+  len=obj->len0+(obj->len1<<8);
+  if(len==0) break;
+
+  ptr.anything=((char*)obj)+sizeof(objhdr);
+
+  switch(obj->type)
+  {
+   case   XPAGE:
+                ixpage(outputfp,obj,0);
+                if(mpage2 && cmpage==mpage1) cmpage=mpage2;
+                else                         cmpage=mpage1;
+                break;
+
+   case   XXXXX: 
+   case UNKNOWN:
+   case   XTEXT:
+   case   XPICT:
+   case  XBLANK:
+   case  XGROUP:
+   case  XGUIDE:
+                break;
+
+   case XBRANCH:
+                ixbranch(outputfp,ptr.branchp);
+                break;
+
+   case   XSECT:
+                firstpage=(objhdr*)(((char*)obj)+len);
+                csect=obj;
+                ixsect(outputfp,ptr.sectp);
+                break;
+
+        default:
+                terminate("Unknown frame type");
+                break;
+  }
+
+  obj=(objhdr*)(((char*)obj)+len);
+  if(obj>contents1) terminate("frame pointer passed contents limit");
+ }
+
+ txstoryflush(outputfp,0);
+}
+
+

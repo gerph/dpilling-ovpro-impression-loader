@@ -1,0 +1,10 @@
+ServerName:TransIMP
+Command:<TransIMP$Dir>.!Convert
+# output type should be a hex number with no leading '&' or anything
+OutputType:b25
+# put null for this next one and nothing will be appended to the command
+# any system variable can be used ...
+TailVar:TransLoader$Tail
+# the name of the system variable that will be set if an error occurs
+# comment this line for convertors that don't set a failure variable
+Result:TransIMP$Failure

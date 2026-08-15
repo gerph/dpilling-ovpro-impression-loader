@@ -1,0 +1,16 @@
+/*->h.deb */
+
+
+#ifdef DEBUG
+
+#define xprintf printf
+
+#else
+
+extern int zprintf(char * format, ...);
+
+#define xprintf 1?0:zprintf
+
+#endif
+
+

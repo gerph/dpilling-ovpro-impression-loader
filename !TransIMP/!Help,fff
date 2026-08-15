@@ -1,0 +1,120 @@
+TransIMP - Loading Impression files into OvationPro
+===================================================
+
+Both Impression single file documents (type BC5 ImpDoc, black square icon
+with a page and quill) and directory documents (type application, name
+starts with a !, upright rectangle icon with a capital I) can be loaded by
+dragging them to the OvationPro icon bar icon after the !TransIMP directory
+has been 'seen' by RISC OS.
+
+
+Because of their history, OvationPro and Impression are close to one another
+in the way they work, and the features they provide. Despite this there are
+differences, and perfect conversion of an Impression document to OvationPro
+format will not always be possible.
+
+
+Styles and Effects
+------------------
+Internally Impression does not support effects, instead hidden styles are
+created to simulate them. When an Impression document is loaded these
+pseudo-styles are turned into real named styles. This is a nice feature, it
+means that you can now turn over a new leaf and use named styles instead of
+effects.
+
+
+First Line
+----------
+A small difference beteween Impression and OvationPro, yet one which has
+many effects is the different way they flow text into frames. In general
+Impression will fit slightly more material into a frame of a given size. One
+reason for this is that the first baseline for text in a frame is positioned
+at the height of the text ascender, rather than the accent height (as in
+OvationPro). From version 2.59, OvationPro allows the ascender height to be
+used, and converted documents will make use of this feature. It does mean
+that converted documents will look and behave slightly differently to
+OvationPro documents you may have created yourself.
+
+Many conversions which at first sight look poor, are caused by a small
+amount of text which has overflowed, creating new pages and so on. Simply
+making some frame slightly bigger, deleting some text, or changing line
+spacing can greatly improve things.
+
+Often just making the frames on the master pages fractionally bigger will
+improve the result considerably.
+
+
+Group Frames
+------------
+In OvationPro, the members of a group must be next to one another in front -
+back order. In Impression this is not the case, frames not in the group can
+appear between group members in front - back order. When loading Impression
+documents groups are preserved, so some frames may change their order.
+
+
+Frame Borders
+-------------
+Although OvationPro supports Impression type Draw file borders, it does
+not have the facility to store border definitions inside documents.
+For the time being any border in Impression is converted into a plain
+fixed width border in OvationPro.
+
+
+Merge Commands
+--------------
+In Impression, a merge command amounts to a command string which is sent via
+the Impulse protocol to a database. On loading, this is duplicated exactly,
+producing in OvationPro terms a merge field with a macro set up which
+invokes Impulse. If you have been using an external database like Impact
+with Impression then this will all work (as long as you have the Impulse
+applet loaded). The trouble occurs in the simple case, where things rely on
+a small helper program inside Impression. In this situation the best thing
+to do may be to delete the defined fields (see main menu,
+File->Mail Merge...->Fields), and then rearrange the merge tags in the text
+if they're not in the right order.
+
+
+Rule Offs
+---------
+OvationPro does not support vertical and horizontal rule offs, so these will
+vanish from converted documents.
+
+
+Numbering
+---------
+OvationPro does not support numbers - however the numbers will be displayed
+as normal editable text.
+
+
+Guide Frames
+------------
+OvationPro does not support guide frames. They are converted into a set of
+four guide lines.
+
+
+Master Frames
+-------------
+Impression allows the background colour of a document frame based on a
+master frame to be changed. OvationPro does not. As a result frame colours
+may change, in particular a frame may change from being transparent to
+opaque.
+
+
+
+Damaged Files
+-------------
+It is apparent that some Impression files are damaged. In particular the
+style table can have dud entries. Such files will in fact crash later
+versions of Impression. A fix is to scan all the text in the document and
+discard any styles which are not used. Doing such a check takes time and
+also removes any good styles which just happen to be unused. The default
+behaviour of the loader is to do the check and throw away unused styles.
+
+You can change this behaviour by changing
+
+Set TransLoader$Tail ""
+
+in the !TransIMP.!Run file to
+
+Set TransLoader$Tail "-nostylecheck"
+

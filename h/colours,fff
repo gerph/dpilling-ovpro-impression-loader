@@ -1,0 +1,11 @@
+/*->h.colours */
+
+
+extern void   initcolours(void);
+extern void   definecolour(int palword);
+extern char * colourstring(int word,int overprint,int transparent);
+extern void   definecolour(int word);
+
+extern void   dumpcolours(void);
+
+

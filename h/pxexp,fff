@@ -1,0 +1,4 @@
+/*->h.pxexp */
+
+extern void dxwritedata(FILE * ofp,int dcindex);
+

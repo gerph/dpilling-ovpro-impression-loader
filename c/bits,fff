@@ -1,0 +1,192 @@
+/*->c.bits */
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+#include <stdarg.h>
+
+
+
+#include "h.bits"
+
+
+int cstrncmp(char * first,char * second,int n)
+{
+ int f;
+ int s;
+
+ while(n--)
+ {
+  f=toupper(*first++);
+  s=toupper(*second++);
+  if(f!=s || !f) return(f-s);
+ }
+
+ return(0);
+}
+
+
+int cstrcmp(char * first,char * second)
+{
+ return(cstrncmp(first,second,-1));
+}
+
+
+
+int xcstrncmp(char * first,char * second,int n)
+{
+ int f;
+ int s;
+
+ while(n--)
+ {
+  f=toupper(*first++);
+  s=toupper(*second++);
+  if(f<32 && s<32) return(0);
+  if(f!=s) return(f-s);
+ }
+
+ return(0);
+}
+
+
+
+
+
+
+char * unquotec(char * input,char * output)
+{
+ char * r;
+ char * w;
+
+ r=input;
+ w=output;
+
+ while(*r)
+ {
+  if(*r=='\"' || *r=='\\') *w++='\\';
+  *w++=*r++;
+ }
+
+ *w=0;
+
+ return(output);
+}
+
+
+
+char * quotec(char * input,char * output)
+{
+ char * r;
+ char * w;
+ int    escape;
+ int    c;
+
+ r=input;
+ w=output;
+ escape=0;
+
+
+ while((c=*r)!=0)
+ {
+  if(c=='\\') escape=1;
+  else
+  {
+   if(escape)
+   {
+    switch(c)
+    {
+     case 't':
+              c='\t';
+              break;
+     case 'n':
+              c='\n';
+              break;
+     case 'r':
+              c='\r';
+              break;
+     case 'v':
+              c='\v';
+              break;
+     case 'f':
+              c='\f';
+              break;
+    }
+    escape=0;
+   }
+   *w++=c;
+  }
+  r++;
+ }
+
+ *w=0;
+
+ return(output);
+}
+
+
+
+
+
+ /*
+  * copies the string pointed to by s2 (including the terminating nul
+  * character) into the array pointed to by s1. If copying takes place
+  * between objects that overlap, the behaviour is undefined.
+  * Returns: the value of s1.
+  */
+
+
+char * xstrcpy(char *s1, const char *s2)
+{
+ while((*s1++=*s2++)>=32);
+ *(s1-1)=0;
+ return(s1);
+}
+
+
+void xstripstr(char * p,int len)
+{
+ while(*p>=32 && len>0) {p++;len--;}
+ *p=0;
+}
+
+
+void xstripstr32(char * p)
+{
+ char * q;
+
+ q=NULL;
+ while(*p>=32)
+ {
+  if(*p==32 && !q) q=p;
+  else             q=NULL;
+  p++;
+ }
+ if(q) *q=0;
+}
+
+
+char * xstrncpy(char *s1,char *s2,int n)
+{
+
+ while(n-->0)
+   if((*s1++=*s2++)<32) break;
+ *(s1-1)=0;
+
+ return(s1);
+}
+
+
+
+int xstrlen(char *s)
+{
+ char * p;
+ p=s;
+ while(*s++>=32);
+ return(s-p-1);
+}
+
+
+

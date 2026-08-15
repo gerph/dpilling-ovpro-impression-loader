@@ -1,0 +1,817 @@
+/*->h.imp */
+
+
+
+#define MINVERSION 28
+
+
+typedef struct filehdr
+{
+ int  v1;            // 0
+ int  v2;            // 4
+ int  v3;
+ char stuff[200-12]; // 12
+
+ int  xx1;           // 200
+
+ char morestuff[276-200-4];
+
+ int  colour1;       // 276
+ int  colour2;       // 280
+ int  colour3;       // 284
+ int  tints;         // 288
+ int  stylebase;     // 292
+ int  x3;            // 296
+ int  x4;            // 300
+ int  x5;            // 304
+ int  numbers;       // 308
+ int  x7;            // 312
+ int  x8;            // 316
+ int  x9;            // 320
+ int  x10;           // 324
+ int  dict1;         // 328
+ int  dict2;         // 332
+ int  mdict1;        // 336
+ int  mdict2;        // 340
+ int  masterpages1;  // 344
+ int  masterpages2;  // 348
+ int  mainpages1;    // 352
+ int  mainpages2;    // 356
+ int  contents1;     // 360
+ int  contents2;     // 364
+ char oldname[12];   // 368
+
+
+
+
+} filehdr;
+
+
+
+typedef struct objhdr
+{
+ int  type:8;
+ int  tx1:8;
+ int  tx2:8;
+ int  tx3:8;
+
+ char lx1;
+ char len0;
+ char len1;
+ char lx3;
+
+} objhdr;
+
+
+
+
+#define XORG 0x2710
+#define YORG (-0x2710)
+
+
+
+#define XPAGE   0x1
+#define XTEXT   0x2
+#define XPICT   0x3
+#define XBLANK  0x4
+#define XBRANCH 0x6
+#define XSECT   0x7
+
+
+#define XGUIDE  0xA
+#define XGROUP  0xB
+
+
+
+
+typedef struct pagestr    // len=68
+{
+ int xxxx0;               // 0
+
+ int  x0;                 // 4
+ int  y0;                 // 8
+ int  x1;                 // 12
+ int  y1;                 // 16
+
+ int  xxx1;               // 20
+ int  xxx2;               // 24
+ int  bleed;              // 28
+ int  xxx4;               // 32
+ int  xxx5;               // 36
+
+ char mpname[28];         // 40
+
+} pagestr;
+
+
+
+
+
+typedef struct textstr    // len=104
+{
+ int xxxx0;                         // 0
+
+ int x0;                            // 4
+ int y0;                            // 8
+ int x1;                            // 12
+ int y1;                            // 16
+
+          int   selected:1;         // 20
+          int   repel:1;
+          int   filled:1;
+          int   xxxx1aa:5;
+
+          int   master:1;           // linked to master frame
+          int   locked:1;
+          int   xxxx1b1:6;
+
+          int   xxxx1c1:5;
+          int   grouped:1;
+          int   repeating:1;
+          int   xxxx1c2:1;
+
+          int   level:8;            // front/back level 0..n
+
+ int dictionaryindex;               // 24
+
+ int exx0;       /* repel text */   // 28
+ int exy0;                          // 32
+ int exx1;                          // 36
+ int exy1;                          // 40
+
+ int xxxx30:8;                      // 44
+ int masterindex:8;
+ int xxxx32:8;
+ int xxxx33:8;
+
+ int backcolour;                    // 48
+
+ int hinset;                        // 52
+ int vinset;                        // 56
+
+ int border0:8;                     // 60
+ int border1:8;
+ int border2:8;
+ int border3:8;
+ int bordercolour;                  // 64
+
+ int embedtag;                      // 68
+
+ int groupn:8;                      // 72
+ int xxx18a:5;
+ int overprint:1;
+ int xxx18b:18;
+
+ int x[7];                          // 76
+
+
+} textstr;
+
+
+
+
+
+typedef struct blankstr    // len=104
+{
+ int xxxx0;                         // 0
+
+ int x0;                            // 4
+ int y0;                            // 8
+ int x1;                            // 12
+ int y1;                            // 16
+
+          int   selected:1;         // 20
+          int   repel:1;
+          int   filled:1;
+          int   xxxx1aa:5;
+
+          int   master:1;           // linked to master frame
+          int   locked:1;
+          int   xxxx1b1:6;
+
+          int   xxxx1c1:5;
+          int   grouped:1;
+          int   repeating:1;
+          int   xxxx1c2:1;
+
+          int   level:8;            // front/back level 0..n
+
+
+
+ int dictionaryindex;               // 24
+
+ int exx0;       /* repel text */   // 28
+ int exy0;                          // 32
+ int exx1;                          // 36
+ int exy1;                          // 40
+
+ int xxxx30:8;                      // 44
+ int masterindex:8;
+ int xxxx32:8;
+ int xxxx33:8;
+
+ int backcolour;                    // 48
+
+ int hinset;                        // 52
+ int vinset;                        // 56
+
+ int border0:8;                     // 60
+ int border1:8;
+ int border2:8;
+ int border3:8;
+ int bordercolour;                  // 64
+
+ int embedtag;                      // 68
+
+ int groupn:8;                      // 72
+ int xxx18a:5;
+ int overprint:1;
+ int xxx18b:18;
+
+ int x[7];                          // 76
+
+
+
+} blankstr;
+
+
+
+
+
+
+typedef struct guidestr             // len=104
+{
+ int xxxx0;                         // 0
+
+ int x0;                            // 4
+ int y0;                            // 8
+ int x1;                            // 12
+ int y1;                            // 16
+
+          int   selected:1;         // 20
+          int   repel:1;
+          int   filled:1;
+          int   xxxx1aa:5;
+
+          int   master:1;           // linked to master frame
+          int   locked:1;
+          int   xxxx1b1:6;
+
+          int   xxxx1c1:5;
+          int   grouped:1;
+          int   repeating:1;
+          int   xxxx1c2:1;
+
+          int   level:8;            // front/back level 0..n
+
+
+
+ int dictionaryindex;               // 24
+
+ int exx0;       /* repel text */   // 28
+ int exy0;                          // 32
+ int exx1;                          // 36
+ int exy1;                          // 40
+
+ int xxxx30:8;                      // 44
+ int masterindex:8;
+ int xxxx32:8;
+ int xxxx33:8;
+
+ int backcolour;                    // 48
+
+ int hinset;                        // 52
+ int vinset;                        // 56
+
+ int border0:8;                     // 60
+ int border1:8;
+ int border2:8;
+ int border3:8;
+ int bordercolour;                  // 64
+
+ int embedtag;                      // 68
+
+ int groupn:8;                      // 72
+ int xxx18a:5;
+ int overprint:1;
+ int xxx18b:18;
+
+ int x[7];                          // 76
+
+
+
+} guidestr;
+
+
+
+
+
+
+
+
+
+
+
+typedef struct pictstr           // 160
+{
+ int xxxx0;                      // 0
+
+ int x0;                         // 4
+ int y0;                         // 8
+ int x1;                         // 12
+ int y1;                         // 16
+
+          int   selected:1;      // 20
+          int   repel:1;
+          int   filled:1;
+          int   xxxx1aa:5;
+
+          int   master:1;           // linked to master frame
+          int   locked:1;
+          int   xxxx1b1:6;
+
+          int   usepsscreen:1;
+          int   xxxx1c1:4;
+          int   grouped:1;
+          int   repeating:1;
+          int   xxxx1c2:1;
+
+          int   level:8;            // front/back level 0..n
+
+
+ int dictionaryindex;            // 24
+
+ int exx0;     /* repel text */  // 28
+ int exy0;                       // 32
+ int exx1;                       // 36
+ int exy1;                       // 40
+
+ int xxxx30:8;                   // 44
+ int masterindex:8;
+ int xxxx32:8;
+ int xxxx33:8;
+
+ int backcolour;                 // 48
+
+ int hinset;                     // 52
+ int vinset;                     // 56
+
+ int border0:8;                     // 60
+ int border1:8;
+ int border2:8;
+ int border3:8;
+ int bordercolour;                  // 64
+
+ int embedtag;                      // 68
+
+ int groupn:8;                      // 72
+ int xxx18a:5;
+ int overprint:1;
+ int xxx18b1:1;
+ int userecommended:1;
+ int xxx18b2:16;
+
+ int x[7];                          // 76
+
+ int xscale;                     // 104
+ int yscale;                     // 108
+ int xshift;                     // 112
+ int yshift;                     // 116
+ int angle;                      // 120  degrees * 0x10000
+
+
+ int psx0:16;
+ int psscreen:8;                 // 125
+ int lpi:8;                      // 124
+
+
+ int y[8];                       // 128
+
+
+} pictstr;
+
+
+
+
+
+
+
+
+typedef struct groupstr    // len=104
+{
+ int xxxx0;                         // 0
+
+ int x0;                            // 4
+ int y0;                            // 8
+ int x1;                            // 12
+ int y1;                            // 16
+
+          int   selected:1;         // 20
+          int   repel:1;
+          int   filled:1;
+          int   xxxx1aa:5;
+
+          int   master:1;           // linked to master frame
+          int   locked:1;
+          int   xxxx1b1:6;
+
+          int   xxxx1c1:5;
+          int   grouped:1;
+          int   repeating:1;
+          int   xxxx1c2:1;
+
+          int   level:8;            // front/back level 0..n
+
+
+
+ int dictionaryindex;               // 24
+
+ int exx0;       /* repel text */   // 28
+ int exy0;                          // 32
+ int exx1;                          // 36
+ int exy1;                          // 40
+
+ int xxxx30:8;                      // 44
+ int masterindex:8;
+ int xxxx32:8;
+ int xxxx33:8;
+
+ int backcolour;                    // 48
+
+ int hinset;                        // 52
+ int vinset;                        // 56
+
+ int border0:8;                     // 60
+ int border1:8;
+ int border2:8;
+ int border3:8;
+ int bordercolour;                  // 64
+
+ int embedtag;                      // 68
+
+ int groupn:8;                      // 72
+ int xxx18a:5;
+ int overprint:1;
+ int xxx18b:18;
+
+ int x[7];                          // 76
+
+
+
+} groupstr;
+
+
+
+
+
+
+typedef struct sectstr  // 116
+{
+ int xxxx0;             // 0
+
+ int createn;           // 4
+
+ int mpindex;           // 8
+
+ int startpagen:16;     // 12
+ int startpage:1;
+ int startonright:1;
+ int copyprev:1;
+ int xxxx3:13;
+
+ int xx4[16];           // 16
+
+
+ int startchapn:16;     // 80
+ int startchap:1;
+ int xxxx20:15;
+
+ int xx21[8];           // 84
+
+
+} sectstr;
+
+
+
+
+
+
+typedef struct branchstr // 0
+{
+
+ int x[10];
+
+} branchstr;
+
+
+
+
+
+
+
+
+typedef union ptrstr
+{
+
+ void      * anything;
+ pictstr   * pictp;
+ textstr   * textp;
+ pagestr   * pagep;
+ sectstr   * sectp;
+ branchstr * branchp;
+ blankstr  * blankp;
+ guidestr  * guidep;
+ groupstr  * groupp;
+
+} ptrstr;
+
+
+
+
+
+
+
+
+
+
+#define DCPICT   0x1
+#define DCTEXT   0x2
+#define DCSECT   0x3
+#define DCBRANCH 0x4
+
+
+typedef struct dictstr
+{
+ char type;
+ char type1;
+ char type2;
+ char type3;
+
+ int id;
+ int xxx2;
+ int xxx3;
+ int xxx4;
+ int xxx5;
+ int len;
+ int xxx7;
+ int types;       // affaff
+ int xxx9;
+ int xxx10;
+ int xxx11;
+ int xxx12;
+ int xxx13;
+
+} dictstr;
+
+
+
+
+
+
+
+
+
+typedef struct icolourstr  // total 48 bytes
+{
+ int  palword;     // XXBBGGRR value
+ int  flags;
+ char y;
+ char c;
+ char m;
+ char k;
+
+ char name[24];
+
+ int xx3;
+ int xx4;
+ int xx5;
+
+} icolourstr;
+
+
+
+typedef struct stylestr
+{
+ int  xxx100:1;
+ int  autoindent:1;
+ int  xxx102:1;
+ int  xxx103:1;
+ int  xxx104:1;
+ int  xxx105:1;
+ int  xxx106:1;
+ int  fontname0:1;    // byte
+
+ int  underline:1;    // 0x1
+ int  script:1;       // 0x2
+ int  strikeout:1;    // 0x4
+ int  alignment:1;    // byte   0=left ... 3=justified
+ int  keepsingle:1;
+ int  keepmultiple:1;
+ int  hyphenation:1;  // 0x40
+ int  xxx115:1;
+
+ int  decimaltab:1;
+ int  keepnext:1;
+ int  textcolour0:1;         // 0x4   byte
+ int  xxx119:1;
+ int  underlinecolour:1;     // 0x10
+ int  xxx121:1;
+ int  xxx122:1;
+ int  textbackcolour:1;      // 0x80
+
+ int  locktogrid:1;          // byte
+ int  ruleoff0:1;
+ int  italic:1;              // 0x04
+ int  bold:1;                // 0x08
+ int  iseffect:1;
+ int  xxx129:1;              // 0x20
+ int  showonstylemenu:1;     // 0x40
+ int  xxx131:1;
+
+
+ int  ruler0:1;
+ int  ruler1:1;
+ int  ruler2:1;
+ int  scriptoffset:1;        // 0x8
+ int  scriptsize:1;          // 0x10
+ int  linespace:1;           // 0x20
+ int  spacebelow:1;          // 0x40
+ int  spaceabove:1;          // 0x80
+
+ int  ulineoffset0:1;        // 0x1
+ int  ulineoffset1:1;        // 0x2
+ int  ruleverticalwidth:1;
+ int  xxx211:1;
+ int  xxx212:1;
+ int  fontsize:1;            // 0x20   word
+ int  fontaspectratio:1;     // 0x40   word
+ int  xxx215:1;
+
+ int  keeptogether:1;
+ int  leadering:1;           // 0x2
+ int  xxx218:1;
+ int  xxx219:1;
+ int  xxx220:1;
+ int  fontname1:1;           // word + 40 byte string
+ int  tracking:1;            // 0x40
+ int  xxx223:1;
+
+ int  textcolour1:1;         // 0x1     2x word
+ int  textcolour2:1;         // 0x2     2x word
+ int  xxx226:1;
+ int  xxx227:1;
+ int  xxx228:1;
+ int  xxx229:1;
+ int  xxx230:1;
+ int  xxx231:1;
+
+
+ int  tabs;
+
+
+ int  xxx4;                 // see non-zero for efx
+ int  xxx5;                 // ditto
+
+ int  key:9;
+ int  b1:7;
+ int  b2:8;
+ int  xxx624:1;
+ int  xxx625:1;
+ int  xxx626:1;
+ int  xxx627:1;
+ int  xxx628:1;
+ int  paragraphapply:1;     // 0x20
+ int  contents:1;
+ int  index:1;              // byte
+
+ char name[32];
+
+
+
+} stylestr;
+
+
+
+#define CTRL_@ 0x0
+#define CTRL_A 0x1
+#define CTRL_B 0x2
+#define CTRL_C 0x3
+#define CTRL_D 0x4
+#define CTRL_E 0x5
+#define CTRL_F 0x6
+#define CTRL_G 0x7
+#define CTRL_H 0x8
+#define CTRL_I 0x9
+#define CTRL_J 0xA
+#define CTRL_K 0xB
+#define CTRL_L 0xC
+#define CTRL_M 0xD
+#define CTRL_N 0xE
+#define CTRL_O 0xF
+#define CTRL_P 0x10
+#define CTRL_Q 0x11
+#define CTRL_R 0x12
+#define CTRL_S 0x13
+#define CTRL_T 0x14
+#define CTRL_U 0x15
+#define CTRL_V 0x16
+#define CTRL_W 0x17
+#define CTRL_X 0x18
+#define CTRL_Y 0x19
+#define CTRL_Z 0x1A
+#define CTRL_OPENSQ  0x1B     // [
+#define CTRL_BACKSL  0x1C     // 
+#define CTRL_CLOSESQ 0x1D     // ]
+#define CTRL_CARET   0x1E     // ^
+#define CTRL_UNDER   0x1F     // _
+
+
+
+typedef struct ilinestr
+{
+ char xx1;
+ char prevlen0;
+ char prevlen1;
+ char prevlen2;
+
+ char xx2;           // low nibble 1,2 page style info? 5, normal line
+ char currlen0;
+ char currlen1;
+ char currlen2;
+
+} ilinestr;
+
+
+
+
+typedef struct numberstr
+{
+ int start:1;
+ int startn:31;
+
+ int type:8;
+ int tag:24;
+
+ int dcindex;
+
+} numberstr;
+
+
+
+#define NUDEC        0x0
+#define NUROMANUPPER 0x1
+#define NUROMANLOWER 0x2
+#define NUALPHAUPPER 0x3
+#define NUALPHALOWER 0x4
+#define NUBULLET     0x5
+
+
+#define KMASK   0xFF
+
+#define KPAGE   0x1
+#define KCHAP   0x2
+#define KNUMBER 0x4
+
+
+#define KFMASK       0xFF00
+#define KFDEC        0x0
+#define KFROMANUPPER 0x100
+#define KFROMANLOWER 0x200
+
+
+
+
+#define SEMBED 0x1
+#define SMERGE 0x2
+
+
+
+typedef struct embedstr
+{
+ int type;                   // 1== embedded object
+ int xx2;
+ int embedtag;
+ int xxx;
+ int xxy;
+
+} embedstr;
+
+
+
+
+
+typedef struct mergestr
+{
+ int  type;                  // 2== merge tag
+ int  xx1;
+ int  xx2;
+ char string[1];             // zero terminated
+
+} mergestr;
+
+
+
+
+
+
+

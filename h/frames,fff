@@ -1,0 +1,18 @@
+/*->h.frames */
+
+extern void initframes(void);
+extern void dumpframes(void);
+
+extern int epoch(int offset,int master);
+
+extern void embedframe(int generation,embedstr * embed,textstr * textp,int master,FILE * ofp);
+
+extern void embedlink(int generation,embedstr * embed,textstr * textp,int master,FILE * ofp);
+
+
+extern FILE * getifp(int dcindex,int * len,dictstr ** dcp);
+
+extern void   loseifp(FILE * ifp);
+
+
+

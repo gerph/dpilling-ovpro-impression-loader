@@ -1,0 +1,38 @@
+/*->h.fsx */
+
+
+#define FSMAXLEAF 256
+#define FSMAXPATH 1024
+
+
+typedef struct fstat
+{
+  int  object;
+  int  length;
+  int  load;
+  int  exec;
+  int  acc;
+  int  type;
+} fstat;
+
+
+
+typedef struct fxstat
+{
+ fstat f;
+ char  name[FSMAXLEAF];
+} fxstat;
+
+
+
+#define CODE -1
+#define APP   0x2000
+#define DIR   0x1000
+
+
+
+extern os_error * fs_stat(char * name,fstat * f);
+
+
+
+

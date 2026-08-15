@@ -1,0 +1,30 @@
+/*->h.main */
+
+
+#define   MAXPATH 256
+
+
+extern int       nostylecheck;
+extern int       directorymode;
+
+extern int       borderwidth;
+
+
+extern filehdr * docdata;
+
+extern char      inputpath[MAXPATH];
+extern char    * inputcat;
+
+extern FILE    * inputfp;
+extern FILE    * outputfp;
+
+
+
+
+extern void terminate(char * message);
+
+
+
+
+
+

@@ -1,0 +1,336 @@
+/*->c.pxexp */
+
+
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <stdio.h>
+#include <locale.h>
+#include <ctype.h>
+
+
+#include "h.etc"
+
+
+#include "h.imp"
+
+#include "h.main"
+
+#include "h.frames"
+
+#include "h.pxexp"
+
+
+
+
+#define DXLEN  80
+#define DXQUAD 19
+
+#define DXBASE '#'
+
+
+
+
+static void dxwritedatas(char * data,FILE * ofp,int len)
+{
+ int           c;
+ int           d;
+
+ static int    mask;
+ static int    shift;
+ static char   buff[DXLEN];
+ static char * dxwr;
+ static int    quad;
+ static int    b;
+
+
+ if(len==-1)
+ {
+  mask=0x3;
+  shift=2;
+  b=0;
+  dxwr=buff;
+  quad=0;
+  *dxwr++='"';
+ }
+ else
+ if(len==-2)
+ {
+  if(shift>2)
+  {
+   d=DXBASE+b;
+   if(d=='\\') d=DXBASE+64;
+   *dxwr++=d;
+  }
+
+  if(quad)
+  {
+   *dxwr++='"';
+   *dxwr++='\n';
+   fwrite(buff,dxwr-buff,1,ofp);
+  }
+ }
+ else
+ {
+  while(len--)
+  {
+   c=*data++;
+
+   d=DXBASE+b+(c>>shift);
+   if(d=='\\') d=DXBASE+64;
+   *dxwr++=d;
+
+   if(shift==6)
+   {
+    d=DXBASE+(c & 0x3F);
+    if(d=='\\') d=DXBASE+64;
+    *dxwr++=d;
+    shift=2;
+    b=0;
+    mask=0x3;
+    quad++;
+
+    if(quad==DXQUAD)
+    {
+     *dxwr++='"';
+     *dxwr++='\n';
+     fwrite(buff,dxwr-buff,1,ofp);
+     dxwr=buff+1;
+     quad=0;
+    }
+   }
+   else
+   {
+    b=(c & mask)<<(6-shift);
+    if(mask==0x3) mask=0xF;
+    shift+=2;
+   }
+  }
+ }
+}
+
+
+
+
+
+#define BSIZE 0x1000
+
+
+
+
+
+
+static void dxwritedata2(FILE * ifp,FILE * ofp,int len,char * data,int dlen)
+{
+ char buffer[BSIZE];
+ int  xlen;
+
+ dxwritedatas(NULL,ofp,-1);
+
+ dxwritedatas(data,ofp,dlen);
+
+ while(len)
+ {
+  xlen=MIN(len,BSIZE);
+  fread(buffer,xlen,1,ifp);
+  dxwritedatas(buffer,ofp,xlen);
+  len-=xlen;
+ }
+
+ dxwritedatas(NULL,ofp,-2);
+}
+
+
+
+
+
+typedef struct epsobjectstr
+{
+ int   length;
+ int   objectlength;
+ int   spare2;
+ int   spare3;
+ char  name[1];
+
+ /* char data[] */
+
+} epsobjectstr;
+
+
+
+/*
+
+ 0  size of hdr before name
+
+ 4  ditto
+
+ 8  size of all hdr info inc name - offset from 0 to start of eps
+
+12  len of eps
+
+
+64  len of eps + impression generated preview
+
+*/
+
+
+
+
+static void epsfile(FILE * ofp,FILE * ifp)
+{
+ char           buff[0x100];
+ int            len;
+ int            hdrlen;
+ int            ihdrlen;
+ epsobjectstr * epsobj;
+ int            posn;
+
+
+ posn=ftell(ifp);
+
+
+ fread(buff,1,sizeof(buff),ifp);
+
+ len=*(int*)(buff+12);
+
+ hdrlen=sizeof(epsobjectstr)+strlen(buff+68)+1;
+ hdrlen=(hdrlen+3) & (~0x3);
+
+ ihdrlen=strlen(buff+68)+1;
+ ihdrlen=(ihdrlen+3) & (~0x3);
+ ihdrlen+=68;
+
+ epsobj=(epsobjectstr*)(buff+52);
+ memset(epsobj,0,sizeof(epsobjectstr)-4);
+ epsobj->objectlength=len;
+ epsobj->length=(hdrlen+epsobj->objectlength+3) & (~0x3);
+
+ fprintf(ofp,"{data \"EPS\"\n");
+ fprintf(ofp,"%d\n",len);
+
+ fseek(ifp,(long int)(posn+ihdrlen),SEEK_SET);
+
+ dxwritedata2(ifp,ofp,len,(char*)epsobj,hdrlen);
+
+ fprintf(ofp,"}\n}\n");
+}
+
+
+
+
+
+void dxwritedata(FILE * ofp,int dcindex)
+{
+ char      buffer[BSIZE];
+ int       xlen;
+ dictstr * dc;
+ int       len;
+ char    * p;
+ FILE    * ifp;
+ int       otype;
+
+
+ ifp=getifp(dcindex,&len,&dc);
+
+
+ dc=(dictstr*)(((char*)docdata)+docdata->dict1);
+ dc+=dcindex;
+
+
+ if((dc->types & 0xFFF)==0xFF5)
+ {
+  epsfile(ofp,ifp);
+ }
+ else
+ {
+  if((dc->types & 0xFFF)==0xAFF)
+  {
+   otype=((dc->types>>12) & 0xFFF);
+   if(otype==0) otype=(dc->types & 0xFFF);
+
+   switch(otype)
+   {
+    case 0xFF9:
+               p="Draw";
+               break;
+
+    case 0xC85:
+               p="Draw";
+               break;
+
+    case 0xBCF: 
+               p="Tablemate";
+               break;
+
+    case 0xD91:
+               p="Equasor";
+               break;
+
+    case 0xB98:
+               p="Formulix";
+               break;
+
+    case 0xC37:
+               p="Eureka";
+               break;
+
+    case 0xB84:
+               p="DiagramIt";
+               break;
+
+    case 0xB7D:
+               p="TabCalc";
+               break;
+
+    case 0xB83:
+               p="GraphMate";
+               break;
+
+    case 0xAFF:
+               p="Draw";
+               break;
+
+       default:
+               p="Data";
+               break;
+   }
+  }
+  else
+  {
+   switch(dc->types & 0xFFF)
+   {
+    case 0xD94:
+               p="ArtWorks";
+               break;
+
+       default:
+               p="Data";
+               break;
+   }
+  }
+
+
+  fprintf(ofp,"{data \"%s\"\n",p);
+  fprintf(ofp,"%d\n",len);
+
+
+  dxwritedatas(NULL,ofp,-1);
+ 
+  while(len)
+  {
+   xlen=MIN(len,BSIZE);
+   fread(buffer,xlen,1,ifp);
+   dxwritedatas(buffer,ofp,xlen);
+   len-=xlen;
+  }
+
+  dxwritedatas(NULL,ofp,-2);
+
+  fprintf(ofp,"}\n}\n");
+ }
+
+ loseifp(ifp);
+
+}
+
+

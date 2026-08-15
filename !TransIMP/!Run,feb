@@ -1,0 +1,8 @@
+IconSprites <Obey$Dir>.!Sprites
+Set TransIMP$Dir <Obey$Dir>
+Set TransIMP$Path <TransIMP$Dir>.
+Set FFGServer$TransIMP -T &BC5 &B25 -T &2000 &B25 -R TransIMP$Dir
+Set File$Type_BC5 ImpDoc
+Set TransLoader$Tail ""
+WimpSlot -min 32K -max 32K
+Run <Obey$Dir>.!Server

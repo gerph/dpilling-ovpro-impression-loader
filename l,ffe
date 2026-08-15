@@ -1,0 +1,4 @@
+|> l
+Set XL$Path ADFS::HardDisc4.$.XL.Task.,ADFS::HardDisc4.$.XL.Cscript.,ADFS::HardDisc4.$.XL.Draw.
+link6 -V -via list XL:TaskLib $.clib.clibG.o.stubsG -O !TransIMP.!Convert
+squeeze6 -v !TransIMP.!Convert

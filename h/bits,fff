@@ -1,0 +1,21 @@
+/*->h.bits */
+
+
+extern int  cstrcmp(char * first,char * second);
+extern int  cstrncmp(char * first,char * second,int n);
+extern int  xcstrncmp(char * first,char * second,int n);
+extern int  xstrlen(char *s);
+
+
+extern char * unquotec(char * input,char * output);
+extern char * quotec(char * input,char * output);
+
+extern char * xstrcpy(char *s1, const char *s2);
+extern char * xstrncpy(char *s1,char *s2,int n);
+
+extern void   xstripstr(char * p,int len);
+extern void   xstripstr32(char * p);
+
+
+
+

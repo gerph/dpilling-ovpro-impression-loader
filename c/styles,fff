@@ -1,0 +1,2802 @@
+/*->c.styles */
+
+
+
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <stdio.h>
+#include <locale.h>
+#include <ctype.h>
+
+
+#include "h.etc"
+
+#include "h.imp"
+
+#include "h.deb"
+
+#include "h.bits"
+
+#include "h.main"
+
+#include "h.frames"
+
+#include "h.colours"
+
+#include "h.styles"
+
+
+// max line size? 10/2/2007
+
+#define TXSTORYBUFF 0x2000
+
+
+#define BODYSEQ 0x100
+
+static int sseq;
+
+
+
+/****************************************************************************/
+
+
+typedef struct picturerecordstr
+{
+ int                     dcindex;
+ int                     tag;
+
+ struct picturerecordstr * next;
+
+} picturerecordstr;
+
+
+static picturerecordstr * picturelist;
+
+
+void picturerecord(int dcindex,int tag)
+{
+ picturerecordstr * e;
+
+ e=malloc(sizeof(picturerecordstr));
+ e->next=picturelist;
+ picturelist=e;
+ e->tag=tag;
+ e->dcindex=dcindex;
+}
+
+
+int pictureseen(int dcindex,int * tag)
+{
+ picturerecordstr * e;
+
+ e=picturelist;
+ while(e)
+ {
+  if(e->dcindex==dcindex)
+  {
+   *tag=e->tag;
+   return(1);
+  }
+  e=e->next;
+ }
+
+ return(0);
+}
+
+
+
+/*****************************************************************************/
+
+
+
+
+
+#ifdef NEVER
+
+
+typedef struct embedrecordstr
+{
+ int                     tag;
+ objhdr                * obj;
+
+ struct embedrecordstr * next;
+
+} embedrecordstr;
+
+
+static embedrecordstr * embedlist;
+
+
+void embedrecord(objhdr * obj,int tag)
+{
+ embedrecordstr * e;
+
+ if(!isembeded(tag,obj))
+ {
+  e=malloc(sizeof(embedrecordstr));
+  e->next=embedlist;
+  embedlist=e;
+  e->tag=tag;
+  e->obj=obj;
+ }
+}
+
+
+int isembeded(int tag,objhdr * obj)
+{
+ embedrecordstr * e;
+
+ if(tag)
+ {
+  e=embedlist;
+  while(e)
+  {
+   if(e->tag==tag && e->obj==obj) return(1);
+   e=e->next;
+  }
+ }
+
+ return(0);
+}
+
+
+#endif
+
+
+
+int isembeded(int tag,objhdr * obj)
+{
+
+ if(tag) return(1);
+ else    return(0);
+
+ USE(obj);
+}
+
+
+
+
+/****************************************************************************/
+
+
+
+
+
+typedef struct storyframestr
+{
+ int                     frameoffset;
+ struct storyframestr  * prev;
+ struct storyframestr  * next;
+ int                     seen;
+} storyframestr;
+
+
+typedef struct storyheaderstr
+{
+ int                     dcindex;
+ struct storyheaderstr * next;
+ storyframestr         * frame;
+ int                     framen;
+ int                     seenn;
+ int                     mseq;
+ int                     generation;
+} storyheaderstr;
+
+
+
+static storyheaderstr * sfirstheader;
+
+
+static storyframestr * findframe(storyheaderstr * sh,int offset)
+{
+ storyframestr  * sf;
+
+ xprintf("findfr %d %d\n",sh->dcindex,offset);
+
+ sf=sh->frame;
+ while(sf)
+ {
+  xprintf("findfr offset=%d frameoffset=%d",offset,sf->frameoffset);
+  if(offset==sf->frameoffset) {xprintf("found %x prev %x next %x frame %x\n",sf,sf->prev,sf->next,sh->frame); return(sf);}
+  sf=sf->prev;
+ }
+
+ xprintf("findfr failed");
+
+ return(NULL);
+}
+
+
+static storyframestr * addframe(storyheaderstr * sh,int offset)
+{
+ storyframestr  * sf;
+ storyframestr  * prev;
+
+ xprintf("add frame %d %d\n",sh->dcindex,offset);
+
+ sf=malloc(sizeof(storyframestr));
+ if(!sf) terminate("Not enough memory in addframe");
+
+ sf->prev=prev=sh->frame;
+ if(prev) prev->next=sf;
+ sf->next=NULL;
+ sh->frame=sf;
+ sf->frameoffset=offset+sizeof(objhdr);
+ sf->seen=0;
+
+
+
+ return(sf);
+}
+
+
+
+
+
+
+
+
+
+static storyheaderstr * findheader(int dcindex)
+{
+ storyheaderstr * sh;
+
+ sh=sfirstheader;
+ while(sh)
+ {
+  if(sh->dcindex==dcindex) break;
+  sh=sh->next;
+ }
+
+ xprintf("findheader %d %x\n",dcindex,sh);
+
+ return(sh);
+}
+
+
+static storyheaderstr * addheader(int dcindex)
+{
+ storyheaderstr * sh;
+
+ xprintf("addheader %d\n",dcindex);
+
+ sh=malloc(sizeof(storyheaderstr));
+ sh->next=sfirstheader;
+ sfirstheader=sh;
+ sh->dcindex=dcindex;
+ sh->frame=NULL;
+ sh->framen=sh->seenn=sh->mseq=sh->generation=0;
+
+ return(sh);
+}
+
+
+
+void txstoryclear(void)
+{
+ storyframestr  * sf;
+ storyframestr  * sfp;
+ storyheaderstr * sh;
+ storyheaderstr * shp;
+
+ sh=sfirstheader;
+ while(sh)
+ {
+  sf=sh->frame;
+  while(sf)
+  {
+   sfp=sf->prev;
+   sf=sf->prev;
+   free(sfp);
+  }
+  shp=sh;
+  sh=sh->next;
+  free(shp);
+ }
+
+ sfirstheader=NULL;
+}
+
+
+
+#ifdef NEVER
+
+static void txstoryframe(textstr * textp,int master,int offset)
+{
+ storyheaderstr * sh;
+ int              dcindex;
+
+ dcindex=textp->dictionaryindex;
+
+         sh=findheader(dcindex);
+ if(!sh) sh=addheader(dcindex);
+
+ addframe(sh,offset);
+
+ USE(master);
+}
+
+#endif
+
+/*****************************************************************************/
+
+static int mseq;
+static int mseqn;
+
+/* output field data */
+
+static void  mergetag(mergestr * merge,storyheaderstr * sh,FILE * ofp)
+{
+ char temp[256];
+
+ unquotec(merge->string,temp);
+
+ fprintf(ofp,"MERGE_%d={merge %d \"%d\" \"{macv=impulse(\\\"%s\\\")}\"}\n",
+                                                    mseq,mseq,mseq,temp);
+ if(!sh->mseq) sh->mseq=mseq;
+ mseq++;
+}
+
+
+/* produce link */
+
+static void  mergelink(FILE * ofp)
+{
+ fprintf(ofp,"{merge %d}\n",mseqn++);
+}
+
+
+
+static void mergestoryinit(textstr * textp,storyheaderstr ** shp)
+{
+ storyheaderstr * sh;
+ int              dcindex;
+
+ dcindex=textp->dictionaryindex;
+
+ sh=findheader(dcindex);
+ if(sh) mseqn=sh->mseq;
+ *shp=sh;
+}
+
+
+/***************************************************************************/
+
+
+
+/* get data on frames attached to this story */
+
+static void getstory(storyheaderstr * sh,textstr * textp,objhdr * sectp,
+                                                         int master,FILE * ofp)
+{
+ ilinestr   iline;
+ int        llen;
+ char       buff[TXSTORYBUFF];
+ int        len;
+ int        i;
+ int        c;
+ int        code;
+ int        code1;
+ FILE     * ifp;
+ int        posn;
+ int        offset;
+
+ xprintf("get story\n");
+
+
+ ifp=getifp(textp->dictionaryindex,&len,NULL);
+
+ if(len>=sizeof(ilinestr))
+ {
+  while(len>=sizeof(ilinestr))
+  {
+   fread(&iline,sizeof(ilinestr),1,ifp);
+   llen=(iline.currlen0)+(iline.currlen1<<8)+(iline.currlen2<<16);
+   len-=llen;
+
+   if(llen==0) break;
+
+   if((iline.xx2 & 0x7)==0x2)
+   {
+    fread(buff,llen-sizeof(ilinestr),1,ifp);
+
+    if(sh->generation==0)
+    {
+     offset=*(int*)buff;
+     if(!master && directorymode) 
+     {
+      offset+=(char*)sectp-(((char*)docdata)+docdata->mainpages2);
+     }
+
+     addframe(sh,offset);
+     sh->framen++;
+    }
+   }
+   else
+   if((iline.xx2 & 0x7)==0x5)
+   {
+    fread(buff,llen-sizeof(ilinestr),1,ifp);
+
+    i=16;
+
+    while(1)
+    {
+     switch(c=buff[i])
+     {
+              case CTRL_E:
+                          i++;
+                          break;
+
+              case CTRL_K:                // page/chap no/numbering
+                          i=(i+1+3)&(~3);
+                          code=*((int*)(buff+i));
+                          i+=4;
+                          break;
+
+              case CTRL_M:
+                          i++;           // newline
+                          break;
+
+
+              case CTRL_N:               // force to next
+                          i++;
+                          break;
+
+
+              case CTRL_R:        // tab
+                          i=(i+1+3)&(~3);
+                          while(1)
+                          {
+                           if((code=*((int*)(buff+i)))==0)
+                           {
+                            i+=4;
+                            break;
+                           }
+                           i+=4;
+                           if(i>=(llen-sizeof(ilinestr))) break;
+                          }
+                          break;
+
+
+              case CTRL_S:  // embedded/merge tags
+                          i=(i+1+3)&(~3);
+                          code1=*((int*)(buff+i));
+
+                          code=*((int*)(buff+i+4));
+
+                          if(code==SEMBED)
+                          {
+                           posn=(int)ftell(ifp);
+                           embedframe(sh->generation,(embedstr*)(buff+i+4),
+                                                     textp,master,ofp);
+                           fseek(ifp,(long int)posn,SEEK_SET);
+                          }
+                          else
+                          if(code==SMERGE)
+                          {
+                           mergetag((mergestr*)(buff+i+4),sh,ofp);
+                          }
+
+                          i+=code1;
+                          break;
+
+
+              case CTRL_U:
+                          i=(i+1+3)&(~3);
+                          code=*((int*)(buff+i));
+                          i+=4;
+                          code1=*((int*)(buff+i));
+                          i+=4;
+                          break;
+
+
+
+        case CTRL_CLOSESQ:  // v+h kerning
+                          i=(i+1+3)&(~3);
+                          code=*((int*)(buff+i));
+                          i+=4;
+                          code1=*((int*)(buff+i));
+                          i+=4;
+                          code=*((int*)(buff+i));
+                          i+=4;
+                          code1=*((int*)(buff+i));
+                          i+=4;
+                          break;
+
+
+
+              case CTRL_G:        // styles on
+              case CTRL_H:        // styles off
+
+                          i=(i+1+3)&(~3);
+                          code1=*((int*)(buff+i));
+                          i+=4;
+
+                          while(1)
+                          {
+                           if((code=*((int*)(buff+i)))==0)
+                           {
+                            i+=4;
+                            break;
+                           }
+                           i+=4;
+                           if(i>=(llen-sizeof(ilinestr))) break;
+                          }
+                          break;
+
+
+              case CTRL_A:
+              case CTRL_B:
+
+              case CTRL_V:
+              case CTRL_W:
+              case CTRL_X:
+              case CTRL_Z:
+                          i=(i+1+3)&(~3);
+                          while(1)
+                          {
+                           if((code=*((int*)(buff+i)))==0)
+                           {
+                            i+=4;
+                            break;
+                           }
+                           i+=4;
+                           if(i>=(llen-sizeof(ilinestr))) break;
+                          }
+                          break;
+
+                  default:
+                          i++;
+                          break;
+     }
+
+     if(i>=(llen-sizeof(ilinestr))) break;
+    }
+   }
+   else
+   {
+    fseek(ifp,(long int)llen-sizeof(ilinestr),SEEK_CUR);
+   }
+  }
+ }
+
+ loseifp(ifp);
+}
+
+
+
+
+
+void txcheckstory(textstr * textp,objhdr * sectp,int master,FILE * ofp)
+{
+ storyheaderstr * sh;
+ int              dcindex;
+
+ dcindex=textp->dictionaryindex;
+
+ xprintf("txcheckstory\n");
+
+ sh=findheader(dcindex);
+ if(!sh)
+ {
+  sh=addheader(dcindex);
+  getstory(sh,textp,sectp,master,ofp);
+ }
+ else
+ if(!master && textp->repeating)
+ {
+  sh->generation++;
+  getstory(sh,textp,sectp,master,ofp);
+ }
+
+ xprintf("txcheckstory ex\n");
+}
+
+
+
+
+
+
+
+/* call this once when a text frame has been output to the DDL */
+
+int txstory(textstr * textp,int master)
+{
+ storyframestr  * sf;
+ storyheaderstr * sh;
+ int              dcindex;
+ int              frameoffset;
+ objhdr         * base;
+ int              bits;
+
+
+ if(textp->repeating) bits=TXSTORYFIRST;
+ else
+ {
+  bits=0;
+
+  dcindex=textp->dictionaryindex;
+
+  xprintf("txstory\n");
+
+  sh=findheader(dcindex);
+  if(!sh) terminate("Missing story header");
+
+  if(master) base=(objhdr*)(((char*)docdata)+docdata->masterpages1);
+  else       base=(objhdr*)(((char*)docdata)+docdata->mainpages2);
+
+  frameoffset=(char*)textp-(char*)base;
+
+  sf=findframe(sh,frameoffset);
+  if(sf)
+  {
+   sh->seenn++;
+   sf->seen=1;
+
+   if(sf->prev==NULL)                         bits|=TXSTORYFIRST;
+   if(sh->seenn==sh->framen && sh->framen>1)  bits|=TXSTORYLAST;
+  }
+ }
+
+ return(bits);
+}
+
+
+
+
+
+void txstorychain(FILE * ofp,textstr * textp,int master)
+{
+ storyheaderstr * sh;
+ storyframestr  * sf;
+ storyframestr  * sfp;
+ int              dcindex;
+ objhdr         * base;
+
+
+ dcindex=textp->dictionaryindex;
+
+ if(master) base=(objhdr*)(((char*)docdata)+docdata->masterpages1);
+ else       base=(objhdr*)(((char*)docdata)+docdata->mainpages2);
+
+
+ sh=findheader(dcindex);
+ if(sh)
+ {
+  sf=sfp=sh->frame;
+
+  while(sfp)
+  {
+   sf=sfp;
+   sfp=sfp->prev;
+  }
+
+  while(sf)
+  {
+   textp=(textstr*)((char*)base+sf->frameoffset);
+   fprintf(ofp," TEXT_%x ",epoch((char*)textp-(char*)docdata,master)); 
+   sf=sf->next;
+  }
+ }
+}
+
+
+
+
+/* last frame has biggest offset */
+
+static storyframestr * insertframe(storyheaderstr * sh,int offset)
+{
+ storyframestr  * sf;
+ storyframestr  * next;
+ storyframestr  * sff;
+ storyframestr  * sfp;
+
+ sf=malloc(sizeof(storyframestr));
+ sf->frameoffset=offset+sizeof(objhdr);
+ sf->seen=0;
+
+ sff=sfp=sh->frame;
+ while(sff)
+ {
+  if(sff->frameoffset<sf->frameoffset) break;
+  sfp=sff;
+  sff=sff->prev;
+ }
+
+ if(sff)
+ {
+  /* insert before sff */
+  if(sh->frame==sff) sh->frame=sf;
+  next=sff->next;
+  sf->next=next;
+  if(next) next->prev=sf;
+  sf->prev=sff;
+  sff->next=sf;
+ }
+ else
+ if(sfp)
+ {
+  /* insert after sfp */
+  sf->next=sfp;
+  sf->prev=NULL;
+  sfp->prev=sf;
+ }
+ else
+ {
+  /* null list */
+  sh->frame=sf;
+  sf->next=sf->prev=NULL;
+ }
+
+ xprintf("insert frame %d %d\n",sh->dcindex,offset);
+
+ return(sf);
+}
+
+
+
+/* call this once when a blank frame has been output to the DDL */
+
+void txblank(blankstr * blankp,int master)
+{
+ storyframestr  * sf;
+ storyheaderstr * sh;
+ int              dcindex;
+
+ dcindex=blankp->dictionaryindex;
+ if((dcindex>=0 || master) && !blankp->repeating)
+ {
+  sh=findheader(dcindex);
+  if(!sh)
+  {
+   sh=addheader(dcindex);
+   sh->seenn=-1;
+  }
+
+  sf=insertframe(sh,(char*)blankp-(char*)docdata-sizeof(objhdr));
+  sh->framen++;
+ }
+}
+
+
+
+
+void txstoryflush(FILE * ofp,int master)
+{
+ storyframestr  * sf;
+ storyframestr  * sfp;
+ storyheaderstr * sh;
+
+
+ sh=sfirstheader;
+ while(sh)
+ {
+  if(sh->seenn==-1 && sh->framen>1)
+  {
+   sf=sfp=sh->frame;
+
+   fprintf(ofp,"CHAIN_%x={textchain\n",epoch(sf->frameoffset,master));
+
+   while(sfp)
+   {
+    sf=sfp;
+    sfp=sfp->prev;
+   }
+
+   while(sf)
+   {
+    fprintf(ofp," TEXT_%x ",epoch(sf->frameoffset,master)); 
+    sf=sf->next;
+   }
+
+   fprintf(ofp,"}\n\n");
+  }
+  sh=sh->next;
+ }
+
+ sfirstheader=NULL;
+}
+
+
+static void txstoryinit(void)
+{
+ sfirstheader=NULL;
+}
+
+
+/**************************************************************************/
+
+
+
+static char * keystring(int key)
+{
+ static char keys[16];
+
+ if(key==0)
+ {
+  sprintf(keys,"");
+ }
+ else
+ if(key<32)
+ {
+  sprintf(keys,"C_%c",'@'+key);
+ }
+ else
+ if(key>=0x181 && key<=0x189)
+ {
+  sprintf(keys,"F%d",key-0x180);
+ }
+ else
+ if(key>=0x1CA && key<=0x1CC)
+ {
+  sprintf(keys,"F1%d",key-0x1CA);
+ }
+ else
+ if(key>=0x191 && key<=0x199)
+ {
+  sprintf(keys,"S_F%d",key-0x190);
+ }
+ else
+ if(key>=0x1DA && key<=0x1DC)
+ {
+  sprintf(keys,"S_F1%d",key-0x1DA);
+ }
+ else
+ if(key>=0x1A1 && key<=0x1A9)
+ {
+  sprintf(keys,"C_F%d",key-0x1A0);
+ }
+ else
+ if(key>=0x1EA && key<=0x1EC)
+ {
+  sprintf(keys,"C_F1%d",key-0x1EA);
+ }
+ else
+ if(key>=0x1B1 && key<=0x1B9)
+ {
+  sprintf(keys,"CS_F%d",key-0x1B0);
+ }
+ else
+ if(key>=0x1FA && key<=0x1FC)
+ {
+  sprintf(keys,"CS_F1%d",key-0x1FA);
+ }
+ else
+ if(key==0x180)
+ {
+  strcpy(keys,"Print");
+ }
+ else
+ if(key==0x190)
+ {
+  strcpy(keys,"S_Print");
+ }
+ else
+ if(key==0x1A0)
+ {
+  strcpy(keys,"C_Print");
+ }
+ else
+ if(key==0x1B0)
+ {
+  strcpy(keys,"CS_Print");
+ }
+ else
+ if(key==0x18C)
+ {
+  strcpy(keys,"CLeft");
+ }
+ else
+ if(key==0x18D)
+ {
+  strcpy(keys,"CRight");
+ }
+ else
+ if(key==0x18E)
+ {
+  strcpy(keys,"CDown");
+ }
+ else
+ if(key==0x18F)
+ {
+  strcpy(keys,"CUp");
+ }
+ else
+ if(key==0x19C)
+ {
+  strcpy(keys,"S_CLeft");
+ }
+ else
+ if(key==0x19D)
+ {
+  strcpy(keys,"S_CRight");
+ }
+ else
+ if(key==0x19E)
+ {
+  strcpy(keys,"S_CDown");
+ }
+ else
+ if(key==0x19F)
+ {
+  strcpy(keys,"S_CUp");
+ }
+ else
+ if(key==0x1AC)
+ {
+  strcpy(keys,"C_CLeft");
+ }
+ else
+ if(key==0x1AD)
+ {
+  strcpy(keys,"C_CRight");
+ }
+ else
+ if(key==0x1AE)
+ {
+  strcpy(keys,"C_CDown");
+ }
+ else
+ if(key==0x1AF)
+ {
+  strcpy(keys,"C_CUp");
+ }
+ else
+ if(key==0x1BC)
+ {
+  strcpy(keys,"CS_CLeft");
+ }
+ else
+ if(key==0x1BD)
+ {
+  strcpy(keys,"CS_CRight");
+ }
+ else
+ if(key==0x1BE)
+ {
+  strcpy(keys,"CS_CDown");
+ }
+ else
+ if(key==0x1BF)
+ {
+  strcpy(keys,"CS_CUp");
+ }
+ else
+ if(key==0x18B)
+ {
+  strcpy(keys,"Copy");
+ }
+ else
+ if(key==0x19B)
+ {
+  strcpy(keys,"S_Copy");
+ }
+ else
+ if(key==0x1AB)
+ {
+  strcpy(keys,"C_Copy");
+ }
+ else
+ if(key==0x1BB)
+ {
+  strcpy(keys,"CS_Copy");
+ }
+ else
+ if(key==0x18A)
+ {
+  strcpy(keys,"Tab");
+ }
+ else
+ if(key==0x19A)
+ {
+  strcpy(keys,"S_Tab");
+ }
+ else
+ if(key==0x1AA)
+ {
+  strcpy(keys,"C_Tab");
+ }
+ else
+ if(key==0x1BA)
+ {
+  strcpy(keys,"CS_Tab");
+ }
+ else
+ if(key==0x1CD)
+ {
+  strcpy(keys,"Insert");
+ }
+ else
+ if(key==0x1DD)
+ {
+  strcpy(keys,"S_Insert");
+ }
+ else
+ if(key==0x1ED)
+ {
+  strcpy(keys,"C_Insert");
+ }
+ else
+ if(key==0x1FD)
+ {
+  strcpy(keys,"CS_Insert");
+ }
+ else
+ {
+  *keys=0;
+ }
+
+ return(keys);
+}
+
+
+
+
+
+static void stylecolours(stylestr * s,int bodytext)
+{
+ char     * data;
+ int        i;
+ int        b;
+ int        seendectab;
+ int        seenleader;
+ int        seenunderline;
+ int        seenstrikeout;
+ int        seenunderlinecolour;
+ int        seenunderlineoffset0;
+ int        seenunderlineoffset1;
+
+
+ seendectab=seenleader=0;
+ seenunderline=seenstrikeout=seenunderlinecolour=0;
+ seenunderlineoffset0=seenunderlineoffset1=0;
+
+
+ data=((char*)s)+sizeof(stylestr);
+ i=0;
+
+
+ if(s->xxx100 || bodytext)
+ {
+
+  i++;
+ }
+
+
+ if(s->autoindent  || bodytext)
+ {
+
+  i++;
+ }
+
+
+ if(s->xxx102 || bodytext)
+ {
+
+  i++;
+ }
+
+
+ if(s->xxx103 || bodytext)
+ {
+
+  i++;
+ }
+
+
+ if(s->xxx104  || bodytext)
+ {
+
+  i++;
+ }
+
+ if(s->xxx105  || bodytext)
+ {
+
+  i++;
+ }
+
+ if(s->xxx106  || bodytext)
+ {
+
+  i++;
+ }
+
+ if(s->fontname0)
+ {
+
+  i++;
+ }
+
+ if(s->underline)
+ {
+  seenunderline=1;
+  i++;
+ }
+
+ if(s->script)
+ {
+
+  i++;
+ }
+
+ if(s->strikeout)
+ {
+  seenstrikeout=1;
+  i++;
+ }
+
+
+ if(s->alignment)
+ {
+  i++;
+ }
+
+
+ if(s->keepsingle)
+ {
+
+  i++;
+ }
+
+ if(s->keepmultiple)
+ {
+
+  i++;
+ }
+
+
+ if(s->hyphenation)
+ {
+  i++;
+ }
+
+
+ if(s->xxx115 || bodytext)
+ {
+
+  i++;
+ }
+
+ if(s->decimaltab)
+ {
+  i++;
+ }
+
+
+ if(s->keepnext)
+ {
+
+  i++;
+ }
+
+ if(bodytext || s->textcolour0)
+ {
+
+  i++;
+ }
+
+
+
+ if(s->xxx119)
+ {
+
+  i++;
+ }
+
+
+
+ if(s->underlinecolour)
+ {
+  i++;
+ }
+
+
+
+ if(s->xxx121)
+ {
+
+  i++;
+ }
+
+
+ if(s->xxx122)
+ {
+
+  i++;
+ }
+
+
+ if(bodytext || s->textbackcolour)
+ {
+
+  i++;
+ }
+
+ if(s->locktogrid)
+ {
+  i++;
+ }
+
+ if(s->ruleoff0)
+ {
+
+  i++;
+ }
+
+ if(s->italic)
+ {
+  i++;
+ }
+
+
+ if(s->bold)
+ {
+  i++;
+ }
+
+ if(s->iseffect)
+ {
+  if(bodytext) i++;
+ }
+
+ if(bodytext || s->xxx129)  // ruler related
+ {
+
+  if(bodytext) i++;
+ }
+
+ if(s->showonstylemenu)
+ {
+
+  if(bodytext) i++;
+ }
+
+ if(bodytext || s->xxx131)
+ {
+  if(bodytext) i++;
+ }
+
+ //  there are 32 bytes up to here in the normal case
+
+ i=(i+3) & (~0x3);
+
+
+ if(s->ruler0 || bodytext)
+ {
+
+  i+=4;
+ }
+
+
+ if(s->ruler1 || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->ruler2 || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->scriptoffset || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->scriptsize || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->linespace || bodytext)    // using top bit to flag...
+ {
+  i+=4;
+ }
+                     
+ if(s->spacebelow || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->spaceabove || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->ulineoffset0 || bodytext)
+ {
+  i+=4;
+ }
+
+
+ if(s->ulineoffset1 || bodytext)
+ {
+  i+=4;
+ }
+
+
+ if(s->ruleverticalwidth || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->xxx211 || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->xxx212 || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->fontsize || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->fontaspectratio || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->xxx215 || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->keeptogether || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->leadering || bodytext)
+ {
+  i+=4;
+ }
+
+
+ if(s->xxx218 || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->xxx219 || bodytext)
+ {
+  i+=4;
+ }
+
+
+ if(s->xxx220 || bodytext)
+ {
+  i+=4;
+ }
+
+
+ if(s->fontname1 || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->tracking || bodytext)
+ {
+  i+=4;
+ }
+
+
+ if(s->xxx223 || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->textcolour1 || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->textcolour2 || bodytext) 
+ {
+
+  i+=4;
+ }
+
+ if(s->xxx226 || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->xxx227 || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->xxx228 || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->xxx229 || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->xxx230 || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->xxx231 || bodytext)
+ {
+  i+=4;
+ }
+
+
+ for(b=0;b<32;b++)
+ {
+  if((s->tabs & (1<<b)) || bodytext) break;
+ }
+
+ if(b<32)
+ {
+  for(b=0;b<32;b++)
+  {
+   if((s->tabs & (1<<b)) || bodytext)
+   {
+    i+=4;
+   }
+  }
+ }
+
+ if(s->fontname1 || bodytext)
+ {
+  i+=40;
+ }
+
+
+ if(s->textcolour1)
+ {
+  definecolour(*((int*)(data+i)));
+  i+=4;
+ }
+
+ if(s->textcolour2) 
+ {
+  definecolour(*((int*)(data+i)));
+  i+=4;
+ }
+
+ if(s->underlinecolour)
+ {
+  definecolour(*((int*)(data+i)));
+  i+=4;
+ }
+
+
+ // apparently 4 more bytes can be read
+
+
+}
+
+
+
+
+
+
+static void declarestylecolours(void)
+{
+ int  n;
+ int  offset;
+
+ for(n=0;n<255;n++)
+ {
+  offset=*((int*)(((char*)docdata)+docdata->stylebase+n*sizeof(int)));
+  if(offset)
+  {
+   stylecolours((stylestr*)(((char*)docdata)+docdata->stylebase+offset),n==0);
+  }
+ }
+}
+
+
+
+
+static void expandstyle(stylestr * s,char * d,int bodytext)
+{
+ char     * data;
+ int        i;
+ int        b;
+ int        seendectab;
+ int        seenleader;
+ int        dectab=0;
+ char       leader[8];
+ int        seenunderline;
+ int        seenstrikeout;
+ int        underline=0;
+ int        strikeout=0;
+ int        seenunderlinecolour;
+ int        underlinecolour=0;
+ int        underlinecolourv=0;
+ int        seenunderlineoffset0;
+ int        underlineoffset0=0;
+ int        seenunderlineoffset1;
+ int        underlineoffset1=0;
+ int        temp;
+ int        code;
+ int        leftindent=0;
+ int        seenbold;
+ int        bold;
+ int        seenitalic;
+ int        italic;
+ char       temps[128];
+
+
+ seendectab=seenleader=0;
+ seenunderline=seenstrikeout=seenunderlinecolour=0;
+ seenunderlineoffset0=seenunderlineoffset1=0;
+ seenbold=seenitalic=0;
+ italic=bold=0;    /* compiler */
+
+ data=((char*)s)+sizeof(stylestr);
+ i=0;
+
+ d+=sprintf(d,"STYLE_%02x={style \"%s\"\n",sseq,
+                                 bodytext?"BodyText":unquotec(s->name,temps));
+
+ d+=sprintf(d,"{keypress \"%s\"}\n",unquotec(keystring(s->key),temps));
+
+
+
+ if(s->xxx100 || bodytext)
+ {
+
+  i++;
+ }
+
+
+ if(s->autoindent  || bodytext)
+ {
+
+  i++;
+ }
+
+
+ if(s->xxx102 || bodytext)
+ {
+
+  i++;
+ }
+
+
+ if(s->xxx103 || bodytext)
+ {
+
+  i++;
+ }
+
+
+ if(s->xxx104  || bodytext)
+ {
+
+  i++;
+ }
+
+ if(s->xxx105  || bodytext)
+ {
+
+  i++;
+ }
+
+ if(s->xxx106  || bodytext)
+ {
+
+  i++;
+ }
+
+ if(s->fontname0 || bodytext)
+ {
+
+  i++;
+ }
+
+
+ if(s->underline || bodytext)
+ {
+  seenunderline=1;
+  underline=data[i];
+  i++;
+ }
+
+ if(s->script || bodytext)
+ {
+  if(data[i]==0) d+=sprintf(d,"{sub 0}{super 0}\n");
+  else
+  if(data[i]==1) d+=sprintf(d,"{sub 1}{super 0}\n");
+  else
+  if(data[i]==2) d+=sprintf(d,"{sub 0}{super 1}\n");
+
+  i++;
+ }
+
+ if(s->strikeout || bodytext)
+ {
+  seenstrikeout=1;
+  strikeout=data[i];
+  i++;
+ }
+
+
+ if(s->alignment || bodytext)
+ {
+  d+=sprintf(d,"{align %d}\n",data[i]);
+  i++;
+ }
+
+
+ if(s->keepsingle || bodytext)
+ {
+
+  i++;
+ }
+
+ if(s->keepmultiple || bodytext)
+ {
+
+  i++;
+ }
+
+
+ if(s->hyphenation || bodytext)
+ {
+  d+=sprintf(d,"{hyphenation %d {hpminsize 5} {hpminbefore 2} {hpminafter 2} {hpmaxconsecutive 3} {hpzone 0} {hpbreakpara 0} {hpbreakcaps 0}}\n",data[i]);
+  i++;
+ }
+
+
+ if(s->xxx115 || bodytext)
+ {
+
+  i++;
+ }
+
+ if(s->decimaltab || bodytext)
+ {
+  seendectab=1;
+  dectab=data[i];
+  i++;
+ }
+
+
+ if(s->keepnext || bodytext)
+ {
+
+  i++;
+ }
+
+ if(bodytext || s->textcolour0)
+ {
+
+  i++;
+ }
+
+
+ if(s->xxx119 || bodytext)
+ {
+
+  i++;
+ }
+
+
+
+ if(s->underlinecolour || bodytext)
+ {
+  seenunderlinecolour=1;
+  underlinecolour=data[i];
+  i++;
+ }
+
+
+
+ if(s->xxx121 || bodytext)
+ {
+
+  i++;
+ }
+
+
+ if(s->xxx122 || bodytext)
+ {
+
+  i++;
+ }
+
+
+ if(bodytext || s->textbackcolour)
+ {
+
+  i++;
+ }
+
+ if(s->locktogrid || bodytext)
+ {
+  d+=sprintf(d,"{baselinelock %d}\n",data[i]);
+  i++;
+ }
+
+ if(s->ruleoff0 || bodytext)
+ {
+
+  i++;
+ }
+
+ if(s->italic || bodytext)
+ {
+  seenitalic=1;
+  italic=data[i];
+
+  i++;
+ }
+
+
+ if(s->bold || bodytext)
+ {
+  seenbold=1;
+  bold=data[i];
+  i++;
+ }
+
+
+ if(s->iseffect || bodytext)
+ {
+  if(bodytext) i++;
+ }
+
+ if(bodytext || s->xxx129)  // ruler related
+ {
+
+  if(bodytext) i++;     //  these if(bodytext)'s are not in reader code
+ }
+
+ if(s->showonstylemenu || bodytext)
+ {
+
+  if(bodytext) i++;
+ }
+
+ if(bodytext || s->xxx131)
+ {
+  if(bodytext) i++;
+ }
+
+ //  there are 32 bytes up to here in the normal case
+
+ i=(i+3) & (~0x3);
+
+
+ if(s->ruler0 || bodytext)
+ {
+  leftindent=*((int*)(data+i));
+  d+=sprintf(d,"{leftindent 1 %d}\n",leftindent);
+  i+=4;
+ }
+
+/*
+
+#define INDENTABS    0
+#define INDENTDELTA  1
+#define INDENTOFFSET 2
+
+if(xrighttype==INDENTDELTA)  ix1=boxes[nboxes-1].x+boxes[nboxes-1].w-xright;
+else
+if(xrighttype==INDENTOFFSET) ix1=xboxleftmargin+xright;
+else                         ix1=xboxleftmargin+xboxwidth-xright;
+
+*/
+
+
+ if(s->ruler1 || bodytext)
+ {
+  temp=*((int*)(data+i));
+  if(temp>0) d+=sprintf(d,"{rightindent 2 %d}\n",temp);
+  else       d+=sprintf(d,"{rightindent 0 %d}\n",-temp);
+  i+=4;
+ }
+
+ if(s->ruler2 || bodytext)
+ {
+  temp=*((int*)(data+i));
+  temp-=leftindent;
+  d+=sprintf(d,"{firstindent %d}\n",temp);
+  i+=4;
+ }
+
+ if(s->scriptoffset || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->scriptsize || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->linespace || bodytext)    // using top bit to flag...
+ {
+  temp=*((int*)(data+i));
+  if(temp & 0x80000000)
+  {
+   d+=sprintf(d,"{leading 2 0x%x}\n",(temp & 0xFFFFFF)-0x10000);
+  }
+  else
+  {
+   d+=sprintf(d,"{leading 1 %d}\n",(temp & 0xFFFFFF));
+  }
+
+  i+=4;
+ }
+                     
+ if(s->spacebelow || bodytext)
+ {
+  d+=sprintf(d,"{spaceafter %d}\n",*((int*)(data+i)));
+  i+=4;
+ }
+
+ if(s->spaceabove || bodytext)
+ {
+  temp=*((int*)(data+i));
+  d+=sprintf(d,"{spacebefore %d}\n",(temp & 0xFFFFFF));
+  i+=4;
+ }
+
+ if(s->ulineoffset0 || bodytext)
+ {
+  seenunderlineoffset0=1;
+  underlineoffset0=*((int*)(data+i));
+  i+=4;
+ }
+
+
+ if(s->ulineoffset1 || bodytext)
+ {
+  seenunderlineoffset1=1;
+  underlineoffset1=*((int*)(data+i));
+  i+=4;
+ }
+
+
+ if(s->ruleverticalwidth || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->xxx211 || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->xxx212 || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->fontsize || bodytext)
+ {
+  d+=sprintf(d,"{textsize %d}\n",(1000*(*((int*)(data+i))))/16);
+  i+=4;
+ }
+
+ if(s->fontaspectratio || bodytext)
+ {
+  d+=sprintf(d,"{scale 0x%x}\n",*((int*)(data+i)));
+  i+=4;
+ }
+
+ if(s->xxx215 || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->keeptogether || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->leadering || bodytext)
+ {
+  seenleader=1;
+  memset(leader,0,sizeof(leader));
+  memcpy(leader,((int*)(data+i)),4);
+  i+=4;
+ }
+
+
+ if(s->xxx218 || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->xxx219 || bodytext)
+ {
+  i+=4;
+ }
+
+
+ if(s->xxx220 || bodytext)
+ {
+  i+=4;
+ }
+
+
+ if(s->fontname1 || bodytext)
+ {
+  i+=4;
+ }
+
+
+ if(s->tracking || bodytext)
+ {
+  d+=sprintf(d,"{track %d}\n",*((int*)(data+i)));
+  d+=sprintf(d,"{baseshift %d}\n",0);
+  i+=4;
+ }
+
+
+ if(s->xxx223 || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->textcolour1 || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->textcolour2 || bodytext) 
+ {
+
+  i+=4;
+ }
+
+ if(s->xxx226 || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->xxx227 || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->xxx228 || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->xxx229 || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->xxx230 || bodytext)
+ {
+  i+=4;
+ }
+
+ if(s->xxx231 || bodytext)
+ {
+  i+=4;
+ }
+
+
+ for(b=0;b<32;b++)
+ {
+  if((s->tabs & (1<<b)) || bodytext) break;
+ }
+
+ if(b<32)
+ {
+  d+=sprintf(d,"{tabruler {tableader \"%s\"}\n",seenleader?leader:"");
+  if(seendectab)
+  {
+   if(dectab) d+=sprintf(d,"{tabdec \"%c\"}\n",dectab);
+   else       d+=sprintf(d,"{tabdec \"\"}\n");
+  }
+
+  for(b=0;b<32;b++)
+  {
+   if((s->tabs & (1<<b)) || bodytext)
+   {
+    // type in lowest byte?
+    temp=(*((int*)(data+i)));
+    code=temp & 0xFF;
+    temp=(temp>>8) & 0xFFFFFF;
+
+    switch(code)
+    {
+     case 0:
+            d+=sprintf(d,"{lefttab %d}\n",temp);
+            break;
+
+     case 1:
+            d+=sprintf(d,"{centretab %d}\n",temp);
+            break;
+
+     case 2:
+            d+=sprintf(d,"{righttab %d}\n",temp);
+            break;
+
+     case 3:
+            d+=sprintf(d,"{decimaltab %d}\n",temp);
+            break;
+
+     default:
+            d+=sprintf(d,"{ruleposn %d}\n",temp);
+            break;
+    }
+
+    i+=4;
+   }
+  }
+
+  d+=sprintf(d,"}\n");
+ }
+
+
+ if(s->fontname1 || bodytext)
+ {
+  xstripstr(data+i,40); /* changing original data ! */
+  d+=sprintf(d,"{fontstyle \"%s\"}\n",data+i);
+  i+=40;
+ }
+
+ if(seenbold)
+ {
+  d+=sprintf(d,"{bold  %d}\n",bold);
+ }
+
+ if(seenitalic)
+ {
+  d+=sprintf(d,"{italic %d}\n",italic);
+ }
+
+
+ if(s->paragraphapply)
+ {
+  d+=sprintf(d,"{scope 1}\n");
+ }
+ else
+ {
+  d+=sprintf(d,"{scope 0}\n");
+ }
+
+
+ if(s->textcolour1 || bodytext)
+ {
+ /* if(s->iseffect || s->textcolour0) */
+  {
+   d+=sprintf(d,"{foreground %s}",colourstring(*((int*)(data+i)),0,0));
+  }
+  i+=4;
+ }
+
+
+ if(s->textcolour2 || bodytext)
+ {
+  if(!s->iseffect && s->textbackcolour) // effects can't set background colour
+  {
+   d+=sprintf(d,"{background %s}",colourstring(*((int*)(data+i)),0,0));
+  }
+  i+=4;
+ }
+
+
+ if(s->underlinecolour)
+ {
+  underlinecolourv=*((int*)(data+i));
+  i+=4;
+ }
+
+
+ // apparently 4 more bytes can be read
+
+ if(seenunderline)
+ {
+  d+=sprintf(d,"{underline %d {type 1} {thickness 1310} {colourvalue %s} {wordunderline 0} {doubleunderline 0}}\n",underline,colourstring(underlinecolourv,0,0));
+
+ }
+
+ if(seenstrikeout)
+ {
+  d+=sprintf(d,"{strikeout %d {type 1} {thickness 1310} {colourvalue %s}}\n",strikeout,colourstring(underlinecolourv,0,0));
+ }
+
+
+ if(bodytext)
+ {
+  d+=sprintf(d,"{reverse 0}\n");
+  d+=sprintf(d,"{verticalrule {leftrule 0 0} {rightrule 0 0} {thickness 0} {colourvalue COL_01 0x10000 0}}\n");
+  d+=sprintf(d,"{horizontalrule {aboverule 0 0} {belowrule 0 0} {thickness 0} {colourvalue COL_01 0x10000 0}}\n");
+
+  d+=sprintf(d,"{case 0}\n");
+  d+=sprintf(d,"{drop 0 3}\n");
+  d+=sprintf(d,"{bullet 0 {bulletbefore \"\"} {bulletafter \"\"} {bulletstyle \"\"} {bullettab 1} {bulletstart 1}{bulletformat 0}}\n");
+  d+=sprintf(d,"{autokern 0}\n");
+
+  d+=sprintf(d,"{wordwrap 1}\n");
+  d+=sprintf(d,"{level 0}\n");
+  d+=sprintf(d,"{smallcaps 0}\n");
+  d+=sprintf(d,"{language 0}\n");
+  d+=sprintf(d,"{angle 0x0}\n");
+  d+=sprintf(d,"{skew 0x0}\n");
+  d+=sprintf(d,"{justification 0 {justminletter 0x0} {justmaxletter 0x4000} {justminword 0xc000} {justmaxword 0x14000} {justflushzone 0} {justsinglewords 0}}\n");
+
+ }
+
+ d+=sprintf(d,"}\n");
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void dumpstyles(void)
+{    
+ int  n;
+ int  offset;
+ char buff[0x1000];
+
+ for(n=0;n<255;n++)
+ {
+  offset=*((int*)(((char*)docdata)+docdata->stylebase+n*sizeof(int)));
+  if(offset)
+  {
+   expandstyle((stylestr*)(((char*)docdata)+docdata->stylebase+offset),
+               buff,n==0);
+   fprintf(outputfp,"%s",buff);
+  }
+  sseq++;
+ }
+}
+
+
+
+int validstyle(int sn)
+{
+ int offset;
+
+ offset=*((int*)(((char*)docdata)+docdata->stylebase+sn*sizeof(int)));
+
+ return(offset!=0);
+}
+
+ 
+
+static void expandnumber(FILE * ofp,int tag,int dcindex)
+{
+ numberstr * num;
+ int         numn;
+ int         nsize;
+ int         n;
+ int         i;
+ int         ntype;
+
+ num=(numberstr*)((char*)docdata+docdata->numbers);
+ nsize=(docdata->x7-docdata->numbers);
+ numn=nsize/sizeof(numberstr);
+
+
+ for(i=0;i<numn;i++)
+ {
+  if(num[i].dcindex==dcindex && num[i].tag==tag) break;
+ }
+
+
+ if(i<numn)
+ {
+  ntype=num[i].type;
+  n=-1;
+
+  while(i>=0)
+  {
+   if(num[i].dcindex==dcindex)
+   {
+    n++;
+    if(num[i].start)
+    {
+     n+=num[i].startn;
+     break;
+    }
+   }
+   i--;
+  }
+
+  if(ntype==NUDEC)
+  {
+   fprintf(ofp,"\"%d\"\n",n);
+  }
+  else
+  if(ntype==NUROMANUPPER)
+  {
+
+  }
+  else
+  if(ntype==NUROMANLOWER)
+  {
+
+  }
+  else
+  if(ntype==NUALPHAUPPER)
+  {
+
+  }
+  else
+  if(ntype==NUALPHALOWER)
+  {
+
+
+  }
+  else
+  if(ntype==NUBULLET)
+  {
+
+  }
+ }
+}
+
+
+
+#define LSIZE 80
+
+
+static char * flushw(char * p,char * lbuf,FILE * ofp)
+{
+
+ if(p>(lbuf+1))
+ {
+  *p++='"';
+  *p++='\n';
+  fwrite(lbuf,p-lbuf,1,ofp);
+  p=lbuf;
+  *p++='"';
+ }
+
+ return(p);
+}
+
+
+
+
+void txwritedata(textstr * textp,int master,FILE * ofp)
+{
+ ilinestr         iline;
+ int              len;
+ int              llen;
+ char             buff[TXSTORYBUFF];
+ char             lbuf[0x100];
+ char           * p;
+ int              i;
+ int              code;
+ int              code1;
+ int              c;
+ int              pendingnewline;
+ char             stylestack[0x100];
+ int              sp;
+ int              j;
+ FILE           * ifp;
+ storyheaderstr * sh;
+
+
+  xprintf("txwritedata index %d",textp->dictionaryindex);
+
+ ifp=getifp(textp->dictionaryindex,&len,NULL);
+
+ if(len>=sizeof(ilinestr))
+ {
+  mergestoryinit(textp,&sh);
+
+  if(sh->generation)
+  {
+   fprintf(ofp,"STORY_%x_%x={story\n",sh->generation,
+                                   epoch((char*)textp-(char*)docdata,master));
+  }
+  else
+  {
+   fprintf(ofp,"STORY_%x={story\n",epoch((char*)textp-(char*)docdata,master));
+  }
+
+
+  fprintf(ofp,"{adduserstyle STYLE_%02x}\n",BODYSEQ);
+  sp=0;
+
+  pendingnewline=0;
+  p=lbuf;
+  *p++='"';
+
+  while(len>=sizeof(ilinestr))
+  {
+   fread(&iline,sizeof(ilinestr),1,ifp);
+   llen=(iline.currlen0)+(iline.currlen1<<8)+(iline.currlen2<<16);
+   len-=llen;
+
+   if(llen==0) break;
+
+
+   if((iline.xx2 & 0x7)==0x2)
+   {
+    fread(buff,llen-sizeof(ilinestr),1,ifp);
+   }
+   else
+   if((iline.xx2 & 0x7)==0x5)
+   {
+    fread(buff,llen-sizeof(ilinestr),1,ifp);
+
+    i=16;
+
+
+    if(pendingnewline)
+    {
+     fprintf(ofp,"{newpara}\n");
+     pendingnewline=0;
+    }
+
+
+    while(1)
+    {
+     switch(c=buff[i])
+     {
+             case CTRL_E:
+                         i++;
+                         break;
+
+             case CTRL_K:                // page/chap no/numbering
+                         i=(i+1+3)&(~3);
+                         code=*((int*)(buff+i));
+                         i+=4;
+
+                         if((code & KMASK)==KPAGE)
+                         {
+                          p=flushw(p,lbuf,ofp);
+                          fprintf(ofp,"{pageno}\n");
+                         }
+                         else
+                         if((code & KMASK)==KCHAP)
+                         {
+                          p=flushw(p,lbuf,ofp);
+                          fprintf(ofp,"{chapterno}\n");
+                         }
+                         else
+                         if((code & KMASK)==KNUMBER)
+                         {
+                          p=flushw(p,lbuf,ofp);
+               expandnumber(ofp,(code>>8) & 0xFFFFFF,textp->dictionaryindex);
+                         }
+                         break;
+
+             case CTRL_M:
+                         i++;           // newline
+                         p=flushw(p,lbuf,ofp);
+                         pendingnewline=1;
+                         break;
+
+
+             case CTRL_N:               // force to next
+                         i++;
+                         p=flushw(p,lbuf,ofp);
+                         fprintf(ofp,"{newpage}\n");
+                         pendingnewline=0;
+                         break;
+
+
+             case CTRL_R:        // tab
+                         i=(i+1+3)&(~3);
+                         while(1)
+                         {
+                          if((code=*((int*)(buff+i)))==0)
+                          {
+                           i+=4;
+                           break;
+                          }
+                          i+=4;
+                          if(i>=(llen-sizeof(ilinestr))) break;
+                         }
+                         p=flushw(p,lbuf,ofp);
+                         fprintf(ofp,"{tab}\n");
+                         break;
+
+
+             case CTRL_S:  // embedded/merge tags
+
+                         p=flushw(p,lbuf,ofp);
+
+                         i=(i+1+3)&(~3);
+                         code1=*((int*)(buff+i));
+
+                         code=*((int*)(buff+i+4));
+                         if(code==SEMBED) embedlink(sh?sh->generation:0,
+                                     (embedstr*)(buff+i+4),textp,master,ofp);
+                         else
+                         if(code==SMERGE) mergelink(ofp);
+
+                         i+=code1;
+                         break;
+
+
+             case CTRL_U:
+                         i=(i+1+3)&(~3);
+                         code=*((int*)(buff+i));
+                         i+=4;
+                         code1=*((int*)(buff+i));
+                         i+=4;
+                         break;
+
+
+
+       case CTRL_CLOSESQ:  // v+h kerning
+                         i=(i+1+3)&(~3);
+                         code=*((int*)(buff+i));
+                         i+=4;
+                         code1=*((int*)(buff+i));
+                         i+=4;
+                         code=*((int*)(buff+i));
+                         i+=4;
+                         code1=*((int*)(buff+i));
+                         i+=4;
+                         break;
+
+
+
+             case CTRL_G:        // styles on
+             case CTRL_H:        // styles off
+
+                         p=flushw(p,lbuf,ofp);
+
+                         if(pendingnewline)
+                         {
+                          fprintf(ofp,"{newpara}\n");
+                          pendingnewline=0;
+                         }
+
+                         for(j=0;j<sp;j++)
+                         {
+                          if(stylestack[j]!=0)
+                          {
+                           if(validstyle(stylestack[j]))
+                           {
+                            fprintf(ofp,"{remuserstyle STYLE_%02x}\n",
+                                             BODYSEQ+stylestack[j]);
+                           }
+                          }
+                         }
+
+                         i=(i+1+3)&(~3);
+                         code1=*((int*)(buff+i));
+                         i+=4;
+
+                         sp=0;
+                         while(1)
+                         {
+                          if((code=*((int*)(buff+i)))==0)
+                          {
+                           i+=4;
+                           break;
+                          }
+                          stylestack[sp++]=(code & 0xFF);
+                          i+=4;
+                          if(i>=(llen-sizeof(ilinestr))) break;
+                         }
+
+                         for(j=0;j<sp;j++)
+                         {
+                          if(validstyle(stylestack[j]))
+                          {
+                           fprintf(ofp,"{adduserstyle STYLE_%02x}\n",
+                                            BODYSEQ+stylestack[j]);
+                          }
+                         }
+
+                         break;
+
+
+             case CTRL_A:
+             case CTRL_B:
+
+             case CTRL_V:
+             case CTRL_W:
+             case CTRL_X:
+             case CTRL_Z:
+                         i=(i+1+3)&(~3);
+                         while(1)
+                         {
+                          if((code=*((int*)(buff+i)))==0)
+                          {
+                           i+=4;
+                           break;
+                          }
+                          i+=4;
+                          if(i>=(llen-sizeof(ilinestr))) break;
+                         }
+                         break;
+
+                 default:
+                         if(buff[i]<32)
+                         {
+
+                         }
+                         else
+                         {
+                          if(buff[i]=='"' || buff[i]=='\\') *p++='\\';
+                          *p++=buff[i];
+                         }
+                         i++;
+                         break;
+     }
+
+     if((p-lbuf)>LSIZE) p=flushw(p,lbuf,ofp);
+   
+     if(i>=(llen-sizeof(ilinestr))) break;
+    }
+   }
+   else
+   {
+    fseek(ifp,(long int)llen-sizeof(ilinestr),SEEK_CUR);
+   }
+  }
+
+  p=flushw(p,lbuf,ofp);
+
+  fprintf(ofp,"{endoftext}\n");
+
+  fprintf(ofp,"}\n\n");
+
+ }
+
+ loseifp(ifp);
+
+ USE(master);
+}
+
+
+
+static void checkstyles(void)
+{
+ dictstr * dc;
+ dictstr * lt;
+ int       dcindex;
+ char      style[256];
+ int       nstyle;
+ int       n;
+ ilinestr  iline;
+ int       llen;
+ char      buff[TXSTORYBUFF];
+ int       len;
+ int       i;
+ int       c;
+ int       code;
+ int       code1;
+ int       offset;
+ FILE    * ifp;
+
+
+ nstyle=0;
+
+ for(n=1;n<255;n++)
+ {
+  offset=*((int*)(((char*)docdata)+docdata->stylebase+n*sizeof(int)));
+  style[n]=(offset!=0);
+  if(offset) nstyle++;
+ }
+
+
+ dc=(dictstr*)(((char*)docdata)+docdata->dict1);
+ lt=(dictstr*)(((char*)docdata)+docdata->mdict1);
+ dcindex=0;
+
+
+ while(dc<lt)
+ {
+  if(dc->type==DCTEXT)
+  {
+   ifp=getifp(dcindex,&len,NULL);
+
+   if(len>=sizeof(ilinestr))
+   {
+    while(len>=sizeof(ilinestr))
+    {
+     fread(&iline,sizeof(ilinestr),1,ifp);
+     llen=(iline.currlen0)+(iline.currlen1<<8)+(iline.currlen2<<16);
+     len-=llen;
+
+     if(llen==0) break;
+
+
+     if((iline.xx2 & 0x7)==0x2)
+     {
+      fread(buff,llen-sizeof(ilinestr),1,ifp);
+     }
+     else
+     if((iline.xx2 & 0x7)==0x5)
+     {
+      fread(buff,llen-sizeof(ilinestr),1,ifp);
+
+      i=16;
+
+
+      while(1)
+      {
+       switch(c=buff[i])
+       {
+             case CTRL_E:
+                         i++;
+                         break;
+
+             case CTRL_K:                // page/chap no/numbering
+                         i=(i+1+3)&(~3);
+                         code=*((int*)(buff+i));
+                         i+=4;
+                         break;
+
+             case CTRL_M:
+                         i++;           // newline
+                         break;
+
+
+             case CTRL_N:               // force to next
+                         i++;
+                         break;
+
+
+             case CTRL_R:        // tab
+                         i=(i+1+3)&(~3);
+                         while(1)
+                         {
+                          if((code=*((int*)(buff+i)))==0)
+                          {
+                           i+=4;
+                           break;
+                          }
+                          i+=4;
+                          if(i>=(llen-sizeof(ilinestr))) break;
+                         }
+                         break;
+
+
+             case CTRL_S:  // embedded/merge tags
+                         i=(i+1+3)&(~3);
+                         code1=*((int*)(buff+i));
+                         i+=code1;
+                         break;
+
+
+             case CTRL_U:
+                         i=(i+1+3)&(~3);
+                         code=*((int*)(buff+i));
+                         i+=4;
+                         code1=*((int*)(buff+i));
+                         i+=4;
+                         break;
+
+
+
+       case CTRL_CLOSESQ:  // v+h kerning
+                         i=(i+1+3)&(~3);
+                         code=*((int*)(buff+i));
+                         i+=4;
+                         code1=*((int*)(buff+i));
+                         i+=4;
+                         code=*((int*)(buff+i));
+                         i+=4;
+                         code1=*((int*)(buff+i));
+                         i+=4;
+                         break;
+
+
+
+             case CTRL_G:        // styles on
+             case CTRL_H:        // styles off
+                         i=(i+1+3)&(~3);
+                         code1=*((int*)(buff+i));
+                         i+=4;
+
+                         while(1)
+                         {
+                          if((code=*((int*)(buff+i)))==0)
+                          {
+                           i+=4;
+                           break;
+                          }
+                          code=code & 0xFF;
+                          if(style[code])
+                          {
+                           style[code]=0;
+                           nstyle--;
+                          }
+                          i+=4;
+                          if(i>=(llen-sizeof(ilinestr))) break;
+                         }
+                         break;
+
+
+             case CTRL_A:
+             case CTRL_B:
+
+             case CTRL_V:
+             case CTRL_W:
+             case CTRL_X:
+             case CTRL_Z:
+                         i=(i+1+3)&(~3);
+                         while(1)
+                         {
+                          if((code=*((int*)(buff+i)))==0)
+                          {
+                           i+=4;
+                           break;
+                          }
+                          i+=4;
+                          if(i>=(llen-sizeof(ilinestr))) break;
+                         }
+                         break;
+
+                 default:
+                         i++;
+                         break;
+       }
+       if(i>=(llen-sizeof(ilinestr))) break;
+      }
+     }
+     else
+     {
+      fseek(ifp,(long int)llen-sizeof(ilinestr),SEEK_CUR);
+     }
+    }
+   }
+
+   loseifp(ifp);
+  }
+
+  dcindex++;
+  dc++;
+ }
+
+ if(nstyle)
+ {
+  for(n=1;n<255;n++)
+  {
+   if(style[n]) *((int*)(((char*)docdata)+docdata->stylebase+n*sizeof(int)))=0;
+  }
+ }
+}
+
+
+
+
+
+void initstyles(void)
+{
+ sseq=BODYSEQ;
+ mseq=1;
+
+ if(!nostylecheck) checkstyles();
+
+ txstoryinit();
+
+ declarestylecolours();
+}
+
+
+
+

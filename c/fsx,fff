@@ -1,0 +1,55 @@
+/*->c.fsx */
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+#include <stdarg.h>
+
+
+#include "h.swis"
+#include "h.kernel"
+#include "h.bbc"
+#include "h.os"
+
+
+
+#include "h.fsx"
+
+
+
+
+
+static int fs_filetype(int load)
+{
+ if((load & 0xFFF00000)==0xFFF00000)
+           return((load >> 8) & 0xFFF);
+ else return(CODE);
+}
+
+
+
+
+os_error * fs_stat(char * name,fstat * f)
+{
+ os_error  *  errpoi;
+ os_filestr  fiblock;
+
+ fiblock.action=5;
+ fiblock.name=name;
+ errpoi=os_file(&fiblock);
+ if(errpoi) return(errpoi);
+
+ f->object=fiblock.action;
+ f->length=fiblock.start;
+ f->load=fiblock.loadaddr;
+ f->exec=fiblock.execaddr;
+ f->acc =fiblock.end;
+
+ f->type=fs_filetype(f->load);
+
+ return(NULL);
+}
+
+
