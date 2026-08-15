@@ -1,0 +1,102 @@
+/*->h.xext */
+
+typedef int (*extfn)(int fp);    /* external function */
+
+typedef struct fndefn
+{
+ char * name;
+ extfn  fn;
+ char * args;
+ char   type;
+ char   argc;
+} fndefn;
+
+
+typedef struct xfnlink
+{
+ struct xfnlink  * next;
+ fndefn          * fns;
+ int               n;
+} xfnlink;
+
+
+#define PVOID      0
+#define PINT       1
+#define PSTR       2
+
+
+extern os_error * addsymboltable(fndefn * fns,xfnlink * fnlink);
+
+
+extern os_error * xstart(void);
+
+extern os_error * xremfile(void);
+extern os_error * xaddfile(char * filename,int rarg,int exec,
+                           int * result,int inval,int inval2);
+extern os_error * addfiles(char * name,int remove);
+extern int        runscript(char * filename,int exec);
+extern void       runscriptpost(void);
+
+extern os_error * xexecstuff3(char * stuff,int rarg,int inval,int inval2);
+
+
+extern int  * stack;
+extern char * stringptr(int s);
+extern int  * xstackptr(void);
+
+
+
+/*
+
+   args= S char *     in params
+         I int  *
+         /            out params
+         S char * 
+         R int  *     function return value
+         V void       skip parameter
+
+*/
+
+
+extern os_error * xexec(char * name,int * result,char * args,...);
+
+extern os_error * assignstring(int s,char * p);
+extern os_error * setstring(int s,char * p);
+extern os_error * appendstring(int s,char * p);
+extern int        createstring(char * p);
+extern int        stringlen(int s1);
+extern void       rmstring(int s);
+
+
+extern int  zruns;
+extern int  zlevel;
+
+extern int  scriptpoll(void);
+
+#define ZDIVZERO 0
+#define ZFILEMAX 1
+#define ZUSER    2
+#define ZEXIT    3
+#define ZMEM     4
+
+/* codes from addfile and xexec */
+
+#define ZRSUCCESS 0
+#define ZRRUNERR  1
+#define ZRLEXERR  2
+#define ZRNOTFOUND 3
+#define ZRBADCALL  4
+
+#define MAXRUN   5
+
+extern void   zraise(int errno, ...);
+extern void   zreport(os_error * err);
+
+
+
+typedef int (*xcasefn)(int code);
+
+
+extern void xsetcasefns(xcasefn toup,xcasefn tolo,xcasefn isup,xcasefn islo);
+
+

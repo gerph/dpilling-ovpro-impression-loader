@@ -1,0 +1,377 @@
+/*->c.xsym  */
+
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <signal.h>
+#include <ctype.h>
+#include <time.h>
+#include <locale.h>
+
+
+#include "h.os"
+#include "h.flex"
+
+
+#include "h.avl"
+
+#include "h.xext"
+#include "h.xint"
+
+
+
+/*****************************************************************************/
+
+static fndefn fntable[XFNS]=
+{
+"bbc_adval",(extfn)bbcadval,"I",PINT,1,
+"bbc_get",(extfn)bbcget,NULL,PINT,0,
+"bbc_inkey",(extfn)bbcinkey,"I",PINT,1,
+"bbc_vdu",(extfn)bbcvdu,"I",PVOID,1,
+"chars",(extfn)chars,"I",PSTR,1,
+"clock",(extfn)clock,NULL,PINT,0,
+"confirm",(extfn)xconfirm,"R",PINT,1,
+"errorbox",(extfn)xerrorbox,"R",PVOID,1,
+"exit",(extfn)xexit,"I",PVOID,1,
+"fileclose",(extfn)fileclose,"I",PINT,1,
+"fileeof",(extfn)fileeof,"I",PINT,1,
+"fileerror",(extfn)fileerror,"I",PINT,1,
+"filegetc",(extfn)filegetc,"I",PINT,1,
+"fileopen",(extfn)fileopen,"RR",PINT,2,
+"fileputc",(extfn)fileputc,"II",PINT,2,
+"filereadi",(extfn)filereadi,"I",PINT,1,
+"filereads",(extfn)filereads,"RI",PINT,2,
+"fileseek",(extfn)fileseek,"II",PINT,2,
+"filetell",(extfn)filetell,"I",PINT,1,
+"filewritei",(extfn)filewritei,"II",PINT,2,
+"filewrites",(extfn)filewrites,"RI",PINT,2,
+"fx",(extfn)ourfx,"III",PVOID,3,
+"getenvs",(extfn)getenvs,"R",PINT,1,
+"gettimeformat",(extfn)xtimeformat,"RR",PVOID,2,
+"gettimestamp",(extfn)gettimestamp,"RRR",PVOID,3,
+"gettimestring",(extfn)xtimestring,"RR",PVOID,2,
+"itos",(extfn)itos,"I",PSTR,1,
+"itoxs",(extfn)itoxs,"I",PSTR,1,
+"messagebox",(extfn)xmessagebox,"R",PINT,1,
+"mids",(extfn)mids,"RII",PSTR,3,
+"sins",(extfn)sins,"RRI",PINT,3,
+"nextobject",(extfn)xnextobject,"RRR",PINT,3,
+"objectexists",(extfn)xobjectexists,"R",PINT,1,
+"osclis",(extfn)osclis,"R",PINT,1,
+"osversion",(extfn)xosversion,NULL,PINT,0,
+"pause",(extfn)xpause,"I",PVOID,1,
+"printi",(extfn)printi,"I",PVOID,1,
+"prints",(extfn)prints,"R",PVOID,1,
+"scale",(extfn)xscale,"III",PINT,3,
+"schar",(extfn)schar,"RI",PINT,2,
+"slen",(extfn)slen,"R",PINT,1,
+"startscan",(extfn)xstartscan,NULL,PVOID,0,
+"stoi",(extfn)stoi,"R",PINT,1,
+/* "stringdump",(extfn)stringdump,NULL,PVOID,0, */
+"swi13",(extfn)ourswi13,"IIII",PINT,4,
+"swin4",(extfn)ourswin4,"IIIIII",PINT,6,
+"swin8",(extfn)ourswin8,"IIIIIIIIII",PINT,10,
+"systems",(extfn)systems,"R",PINT,1,
+"translate",(extfn)xtranslate,"R",PVOID,1,
+NULL,NULL,NULL,0,0
+};
+
+static xfnlink fnlink;
+
+
+
+static xfnlink * firstlink;
+
+static int fncmp(const void * p1,const void * p2)
+{
+ return(strcmp(((fndefn *)p1)->name,((fndefn *)p2)->name));
+}
+
+
+os_error * addsymboltable(fndefn * fns,xfnlink * fnlink)
+{
+ int i;
+ xfnlink * link;
+
+ fnlink->next=NULL;
+ fnlink->fns=fns;
+ i=0;
+ while(fns[i].name) i++;
+ fnlink->n=i;
+
+ qsort(fns,i,sizeof(fndefn),fncmp);
+
+ if(firstlink)
+ {
+  link=firstlink;
+  while(link->next) link=link->next;
+  link->next=fnlink;
+ }
+ else firstlink=fnlink;
+
+ fnlink->next=NULL;
+
+ return(NULL);
+}
+
+
+/*****************************************************************************/
+/* x symbol table manager */
+
+char           * xsymheap;  /* heap used to store symbol table        */
+static int       xheapsize; /* pointer to first free location in heap */
+static symstk  * xsyms;     /* list of pointers to first entry in each stage */
+int              xnsyms;    /* number of stages */
+
+
+
+static int xsearchfn(void * key1,void * key2)
+{
+
+ return(strcmp(
+               ((symstr*)(((char*)key1)-sizeof(avlstr)+sizeof(int)))->key,
+               ((symstr*)(((char*)key2)-sizeof(avlstr)+sizeof(int)))->key
+       ));
+}
+
+
+/* given a name, add it to table, return offset */
+
+int xadd(char ** name,int val,int type,int mode)
+{
+ symstr * p;
+ int      len;
+ int      node;
+
+ len=strlen(*name)+sizeof(symstr);
+ len=(len+3)&(~3);
+
+ flex_chunk((flex_ptr)&xsymheap,xheapsize+len,XHEAPCHUNK);
+ node=xheapsize;
+ p=xptr(xheapsize);
+ xheapsize+=len;
+
+ strcpy(p->key,*name);
+ p->type=type;
+ p->val=val;
+ p->mode=mode;
+ p->args=0;
+ p->argc=0;
+
+ avlsearch(node,&xsyms[xnsyms-1].root,xsymheap,xsearchfn);
+
+ return(node);
+}
+
+
+
+
+static int xfindfn(void * key1,void * key2)
+{
+ return(strcmp((char*)key1,
+               ((symstr*)(((char*)key2)-sizeof(avlstr)+sizeof(int)))->key));
+}
+
+
+
+/* given a name, return symbol table offset, or -1 if it does not exist */
+
+int xfindi(char * name,int * internal)
+{
+ int       stage;
+ int       hit;
+ int       lo;
+ int       hi;
+ int       probe;
+ int       code;
+ xfnlink * fnlink;
+
+ *internal=0;
+
+ for(stage=xnsyms-1;stage>=0;stage--)
+ {
+  if((hit=avlfind(name,xsyms[stage].root,xsymheap,xfindfn))!=-1) return(hit);
+ }
+
+ fnlink=firstlink;
+ while(fnlink)
+ {
+  lo=0;
+  hi=(fnlink->n)-1;
+
+  while(1)
+  {
+   probe=(lo+hi)/2;
+
+   code=strcmp(fnlink->fns[probe].name,name);
+   if(!code)
+   {
+    *internal=1;
+    return((int)&fnlink->fns[probe]);
+   }
+   if(code>0) hi=probe-1;
+   else       lo=probe+1;
+   if(lo>hi) break;
+  }
+  fnlink=fnlink->next;
+ }
+
+ return(XSNOTFOUND);
+}
+
+
+
+int xfind(char * name)
+{
+ int internal;
+ return(xfindi(name,&internal));
+}
+
+
+
+/* given a name, return symbol table offset, or -1 if it does not exist */
+/* only one stage */
+
+int xfinds(char * name,int stage)
+{
+ int hit;
+
+ hit=avlfind(name,xsyms[stage-1].root,xsymheap,xfindfn);
+
+ return(hit==-1?XSNOTFOUND:hit);
+}
+
+
+
+
+/*removes 'stage', and any newer stages too */
+
+void xremstage(int stage)
+{
+ xnsyms=stage-1;
+ xheapsize=xsyms[xnsyms].heap;
+ flex_chunk((flex_ptr)&xsyms,xnsyms*sizeof(symstk),XSYMCHUNK);
+ flex_chunk((flex_ptr)&xsymheap,xheapsize,XHEAPCHUNK);
+}
+
+
+
+
+/* adds another stage to the symbol table */
+/* notice first stage is number 1 */
+
+int xaddstage(void)
+{
+ xnsyms++;
+ flex_chunk((flex_ptr)&xsyms,xnsyms*sizeof(symstk),XSYMCHUNK);
+ xsyms[xnsyms-1].heap=xheapsize;
+ xsyms[xnsyms-1].root=NIL_NODE;
+ return(xnsyms);
+}
+
+
+
+/* called once boots symbol table */
+
+os_error * xsymstart(void)
+{
+ os_error * err;
+ xnsyms=0;
+ err=flex_alloc((flex_ptr)&xsymheap,XHEAPCHUNK);
+ if(!err) err=flex_alloc((flex_ptr)&xsyms,XSYMCHUNK);
+ xheapsize=0;
+
+ if(!err) err=addsymboltable(fntable,&fnlink);
+
+ return(err);
+}
+
+
+
+int symfntype(int argc,int sym,int internal,int * mode)
+{
+ int      args;
+ int      c;
+ fndefn * fn;
+
+ if(internal)
+ {
+  fn=(fndefn*)sym;
+  if(argc>=fn->argc)
+  {
+   *mode=0;
+   return(PINT);
+  }
+  else
+  {
+   c=fn->args[argc];
+
+   if(c=='R') 
+   {
+    *mode=PREF;
+    return(PSTR);
+   }
+   else
+   {
+    *mode=0;
+    if(c=='S') return(PSTR);
+    else       return(PINT);
+   }
+  }
+ }
+ else
+ {
+  args=xptr(sym)->args;
+  args=(args>>(argc*2)) & 0x3;
+
+/*  dprintf(0,"read argc=%d type=%d\n",argc,args); */
+
+  *mode=((args & 0x2)>>1)+1;
+  return((args & 0x1)+1);
+ }
+}
+
+
+int symfnargc(int sym,int internal)
+{
+ symstr * sx;
+
+ if(internal)    /* internal function */
+ {
+  return(((fndefn*)sym)->argc);
+ }
+ else
+ {
+  sx=xptr(sym);
+  return(sx->argc);
+ }
+}
+
+
+
+void setsymfntype(int argc,int sym,int type,int mode)
+{
+ symstr * sx;
+ int      args;
+
+ sx=xptr(sym);
+ args=sx->args;
+
+ argc*=2;
+ args&=~(3<<argc);
+ args|=(((type-1)+((mode-1)<<1))<<argc);
+
+/*  dprintf(0,"set argc=%d type=%d mode=%d\n",argc/2,type,mode); */
+
+ xptr(sym)->args=args;
+}
+
+
+
+
+
+
+
+
+

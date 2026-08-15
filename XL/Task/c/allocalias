@@ -1,0 +1,67 @@
+/*->c.allocalias */
+
+
+
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <stdio.h>
+
+
+#include "h.os"
+#include "h.werr"
+#include "h.wimp"
+#include "h.wimpt"
+#include "h.err"
+#include "h.flex"
+#include "h.alloc"
+
+
+
+
+extern char * aa_calloc(size_t /*nmemb*/, size_t /*size*/);
+extern void   aa_free(void * /*ptr*/);
+extern char * aa_malloc(size_t /*size*/);
+extern char * aa_realloc(void * /*ptr*/, size_t /*size*/);
+
+
+
+char * aa_calloc(size_t nmemb, size_t size)
+{
+ os_error * err;
+ void     * ptr;
+
+ err=salloc((flex_ptr)&ptr,nmemb*size);
+ return(err?NULL:ptr);
+}
+
+
+
+void aa_free(void * ptr)
+{
+ sfree((flex_ptr)&ptr);
+}
+
+
+
+char * aa_malloc(size_t size)
+{
+ os_error * err;
+ void     * ptr;
+
+ err=ralloc((flex_ptr)&ptr,size);
+ return(err?NULL:ptr);
+}
+
+
+
+char * aa_realloc(void * ptr,size_t size)
+{
+ os_error * err;
+
+ err=srealloc((flex_ptr)&ptr,size);
+ return(err?NULL:ptr);
+}
+
+
+

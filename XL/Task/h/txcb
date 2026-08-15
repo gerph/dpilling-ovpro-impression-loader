@@ -1,0 +1,13 @@
+/*->h.txcb */
+
+
+typedef os_error * (*txcbpastefn)(char * p,int len);
+typedef os_error * (*txcbcopyfn)(char * p);
+
+
+extern os_error * txcbpaste(int handle,int icon,int insert);
+extern os_error * txcbcopy(int handle,int icon);
+extern os_error * txcbkey(int * key,int handle,int icon);
+extern os_error * txcbregister(txcbpastefn xpaste,txcbcopyfn xcopy);
+
+

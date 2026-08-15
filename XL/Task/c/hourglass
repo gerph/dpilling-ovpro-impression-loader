@@ -1,0 +1,61 @@
+/*->c.hourglass */
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+#include <stdarg.h>
+
+
+#include "h.swis"
+#include "h.kernel"
+#include "h.bbc"
+#include "h.os"
+
+#include "h.hourglass"
+
+
+/*****************************************************************************/
+                               /* Hourglass code */
+
+
+void hourglasspc(int percent)
+{
+  os_regset rx;
+  rx.r[0]=percent;
+  os_swix(Hourglass_Percentage,&rx);
+}
+
+
+void hourglasssmash(void)
+{
+  os_regset rx;
+  os_swix(Hourglass_Smash,&rx);
+}
+
+
+void hourglassoff(void)
+{
+  os_regset rx;
+  os_swix(Hourglass_Off,&rx);
+}
+
+
+void hourglasson(void)
+{
+  os_regset rx;
+  os_swix(Hourglass_On,&rx);
+}
+
+
+void hourglassonafter(int delay)
+{
+  os_regset rx;
+  rx.r[0]=delay;
+  os_swix(Hourglass_Start,&rx);
+}
+
+
+
+

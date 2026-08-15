@@ -1,0 +1,82 @@
+/*->h.flex */
+
+
+#ifndef __flex_h
+#define __flex_h
+
+typedef void **flex_ptr;
+
+
+
+#define FLEX_MAX -1
+#define FLEX_NORESIZE (1<<7)
+
+
+
+typedef struct flexblockstr
+{
+ char                * flex__freep;  /* free flex memory */
+ char                * flex__lim;    /* limit of flex memory */
+ char                * flex__base;
+ int                   areano;
+ int                   uses;
+ int                   demon:1;
+ int                   overhead;
+ struct flexblockstr * next;
+ struct flexblockstr * prev;
+
+} flexblockstr;
+
+
+
+typedef os_error * (*flex_lockfn)(int handle,int by);
+typedef os_error * (*flex_panicfn)(int n);
+
+
+
+
+
+extern os_error * flex_alloca(flex_ptr anchor,int n,flexblockstr * fb);
+extern os_error * flex_freea(flex_ptr anchor,flexblockstr * fb);
+extern os_error * flex_extenda(flex_ptr anchor,int newsize,flexblockstr * fb);
+extern os_error * flex_midextenda(flex_ptr anchor,int at,int by,
+                                                           flexblockstr * fb);
+extern os_error * flex_chunka(flex_ptr anchor,int size,int chunksize,
+                                                           flexblockstr * fb);
+extern os_error * flex_createarea(flexblockstr ** fbp,int bits,int max,
+                                                           char * name);
+extern os_error * flex_deletearea(flexblockstr * fb);
+
+extern os_error * flex_finit(void);
+
+
+
+extern os_error * flex_alloc(flex_ptr anchor,int n);
+extern os_error * flex_free(flex_ptr anchor);
+extern os_error * flex_size(flex_ptr anchor,int * size);
+extern os_error * flex_extend(flex_ptr anchor,int newsize);
+extern os_error * flex_midextend(flex_ptr anchor, int at, int by);
+extern os_error * flex_init(void);
+extern os_error * flex_chunk(flex_ptr anchor,int size,int chunksize);
+extern os_error * flex_setlock(flex_ptr anchor,flex_lockfn lockfn,int handle);
+extern os_error * flex_addpanic(flex_panicfn panic);
+extern os_error * flex_swop(flex_ptr anchor1,flex_ptr anchor2);
+
+extern os_error * flex_overheada(int overhead,flexblockstr * fb);
+extern int        flex_getoverheada(flexblockstr * fb);
+extern os_error * flex_overhead(int overhead);
+extern int        flex_getoverhead(void);
+
+
+extern int        flex_freemem(void); /* for main slot only */
+
+
+
+
+extern void flex_debug(flex_ptr anchor,int line);
+extern int  flex_checka(flexblockstr * fb);
+extern int  flex_check(int fp);
+
+
+#endif
+

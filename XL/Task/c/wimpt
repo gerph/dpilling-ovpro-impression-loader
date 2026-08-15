@@ -1,0 +1,179 @@
+/*->c.wimpt */
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <signal.h>
+#include <ctype.h>
+#include <time.h>
+#include <stdarg.h>
+
+#include "h.os"
+#include "h.bbc"
+#include "h.werr"
+#include "h.wimpt"
+
+
+static int wimpt__mode = 12;
+
+static int wimpt__read_screen_mode(void)
+{
+ int x, y;
+ (void) os_byte(135, &x, &y);
+ return y;
+}
+
+
+BOOL wimpt_checkmode(void)
+{
+ int old = wimpt__mode;
+ wimpt__mode = wimpt__read_screen_mode();
+ return old != wimpt__mode;
+}
+
+
+int wimpt_mode(void)
+{
+ return(wimpt__mode);
+}
+
+
+static wimp_t wimpt__task = 0;
+
+wimp_t wimpt_task(void) {return wimpt__task;}
+
+
+static char *programname = "";
+static char *programtextname;
+static char *programspritename;
+
+
+char * wimpt_programname(void)
+{
+ return(programname);
+}
+
+
+char * wimpt_programtextname(void)
+{
+ return(programtextname?programtextname:programname);
+}
+
+
+char * wimpt_programsprite(void)
+{
+ return(programspritename);
+}
+
+
+
+static void wimpt__exit(void)
+{
+ (void) wimp_taskclose(wimpt__task);
+}
+
+
+
+#ifdef NEVER
+
+void wimpt_noerr(os_error *e) 
+{
+  if (e != 0) {
+    os_error er;
+    er.errnum = e->errnum;
+    sprintf(
+      er.errmess,
+      "%s has suffered a fatal internal error (%s) and must exit immediately",
+      programname,
+      e->errmess);
+    report(&er);
+    exit(0);
+  };
+}
+
+#endif
+
+
+/*****************************************************************************/
+
+/* in production versions, we use these signal handlers      */
+/* the escape one is used during printing, and does nothing  */
+/* the other one prints up an error message and then resumes */
+
+static void escape_handler(int sig)
+{
+ (void) signal(SIGINT, &escape_handler);
+ /* reinstall ourselves, as SIG_DFL has been restored by the system: */
+ /* as defined by the (dumb) ANSI spec! */
+ sig=0;
+}
+
+
+
+static crashfn crash;
+
+
+static void general_handler(int sig)
+{
+ char string[128];
+ sprintf(string,"%s has suffered an internal error type=%d.",programname,sig);
+ errorbox(string);
+
+ if(crash) crash();
+
+ (void) signal(sig, &general_handler);
+ exit(0);
+}
+
+
+void wimpt_setcrash(crashfn xcrash)
+{
+ crash=xcrash;
+}
+
+
+
+static int wimpversioninit=200;
+
+
+void wimpt_wimpversion(int version)
+{
+ wimpversioninit=version;
+}
+
+
+int wimpt_init(char *progname)
+{
+ int version;
+
+ signal(SIGINT,  &escape_handler);
+
+ signal(SIGABRT, &general_handler);
+ signal(SIGFPE,  &general_handler);
+ signal(SIGILL,  &general_handler);
+ signal(SIGSEGV, &general_handler);
+ signal(SIGTERM, &general_handler);
+
+ version=wimpversioninit;
+ programname = progname;
+ (void) wimp_taskinit(programname,&version,&wimpt__task);
+ wimpt_checkmode();
+ atexit(wimpt__exit);
+
+ return(version);
+}
+
+
+int wimpt_init2(char *progname,char * textname,char * spritename)
+{
+ programspritename=spritename;
+ programtextname=textname;
+ return(wimpt_init(progname));
+}
+
+
+
+
+
+
+

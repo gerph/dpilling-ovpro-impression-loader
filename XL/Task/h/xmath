@@ -1,0 +1,52 @@
+/*->h.xmath */
+
+#define PI     3.14159265358979323846
+
+typedef struct big
+{
+ unsigned int lo;
+          int hi;
+} big;
+
+
+
+#ifdef PROD
+
+extern __pure int  fastdiv400(int n);
+extern __pure int  squareroot(int n,int scale);
+extern        int  bigsquareroot(big * n);
+extern        void bigmul(big * n,int signed,int positive);
+extern        int  bigdiv(big * n,int divider);
+extern        void bigadd(big * n1,big * n2,big * result);
+extern        void bigsub(big * n1,big * n2,big * result);
+extern __pure int  scale(int x,int mul,int div);
+extern __pure int  scalenr(int x,int mul,int div);
+extern __pure int  ttmul(int t1,int t2);
+extern __pure int  pythag(int a,int b);
+extern __pure int  pythagd(int r,int x);
+extern __pure int  scaleatan2(int x,int y);
+extern __pure int  scaleatan(int t);
+extern        void bignormalise(big * top,big * bot);
+
+#else
+
+extern  int  fastdiv400(int n);
+extern  int  squareroot(int n,int scale);
+extern  int  bigsquareroot(big * n);
+extern  void bigmul(big * n,int signed,int positive);
+extern  int  bigdiv(big * n,int divider);
+extern  void bigadd(big * n1,big * n2,big * result);
+extern  void bigsub(big * n1,big * n2,big * result);
+extern  int  scale(int x,int mul,int div);
+extern  int  scalenr(int x,int mul,int div);
+extern  int  ttmul(int t1,int t2);
+extern  int  pythag(int a,int b);
+extern  int  pythagd(int r,int x);
+extern  int  scaleatan2(int x,int y);
+extern  int  scaleatan(int t);
+extern  void bignormalise(big * top,big * bot);
+
+#endif
+
+
+

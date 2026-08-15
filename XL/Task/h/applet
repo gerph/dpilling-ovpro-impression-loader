@@ -1,0 +1,21 @@
+/*->h.applet */
+
+
+extern char * appspath;
+
+
+typedef os_error * (*ascanfn)(char * string);
+
+extern os_error * appletscan(ascanfn ascan);
+
+
+extern os_error * appletinit(char * apps);
+extern os_error * appletboot(void);
+
+extern os_error * appletrun(void);
+extern os_error * appletsprites(void);
+extern os_error * applettemplates(void);
+extern os_error * appletmessages(void);
+extern os_error * applethelp(void);
+
+

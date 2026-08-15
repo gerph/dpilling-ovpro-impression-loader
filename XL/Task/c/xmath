@@ -1,0 +1,90 @@
+/*->c.xmath */
+
+
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <stdio.h>
+#include <math.h>
+
+#include "h.os"
+
+
+#include "h.flex"
+#include "h.sprite"
+
+#include "h.etc"
+
+#include "h.xmath"
+
+
+
+
+/* x=sqrt(a*a+b*b) */
+
+int pythag(int a,int b)
+{
+ big a2;
+ big b2;
+ big sum;
+
+ if(b==0) return(ABS(a));
+ else
+ if(a==0) return(ABS(b));
+ else
+ {
+  bigmul(&a2,a,a);
+  bigmul(&b2,b,b);
+  bigadd(&a2,&b2,&sum);
+  return(bigsquareroot(&sum));
+ }
+}
+
+
+/* y=sqrt(r*r-x*x) */ 
+
+int pythagd(int r,int x)
+{
+ big a2;
+ big b2;
+ big diff;
+
+ if(x==0) return(ABS(r));
+ else
+ {
+  bigmul(&a2,r,r);
+  bigmul(&b2,x,x);
+  bigsub(&a2,&b2,&diff);
+  return(bigsquareroot(&diff));
+ }
+}
+
+
+
+int scaleatan2(int x,int y)
+{
+ int angle;
+
+ if(y) angle=(int)((180*atan2((double)x,(double)y)/PI)*0x10000);
+ else  
+ {
+  if(x<0) angle=-90*0x10000;
+  else
+  if(x>0) angle=90*0x10000;
+  else    angle=0;
+ }
+
+ return(angle);
+}
+
+
+int scaleatan(int t)
+{
+ int angle;
+
+ angle=(int)(180.0*(double)0x10000*atan((double)t/(double)0x10000)/PI);
+
+ return(angle);
+}
+
+

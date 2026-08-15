@@ -1,0 +1,8 @@
+/*->h.hourglass */
+
+extern void hourglasspc(int percent);
+extern void hourglasssmash(void);
+extern void hourglassoff(void);
+extern void hourglasson(void);
+extern void hourglassonafter(int delay);
+

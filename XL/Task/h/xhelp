@@ -1,0 +1,7 @@
+/*->h.xhelp     */
+
+#define ICONBARTAG 0x80
+
+extern os_error * addhelp(char * path,char * leaf);
+extern char     * helpfindtagstring(int tag,int icon);
+

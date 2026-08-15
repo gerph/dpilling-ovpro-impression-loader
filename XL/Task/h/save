@@ -1,0 +1,42 @@
+/*->h.save */
+
+
+
+#define DIRECTORY 0x1000
+
+
+typedef os_error * (*saveoptionfn)(int handle,int opt,int * type,char * name);
+
+
+typedef struct saveoptionstr
+{
+ char         * name;
+ saveoptionfn   fn;
+
+} saveoptionstr;
+
+
+typedef int (*ramsavefn)(int flags);
+
+typedef os_error * (*savemousefn)(mousestr * mouse,char * name,int type);
+
+extern int saveref;
+extern os_error * savefile(char * filename,int type);
+extern os_error * setsave(char * name,int type,savefn save,int * handle);
+extern os_error * sendsave(int filetype,char * filename,mousestr * mouse);
+extern os_error * sendsave2(int filetype,char * filename,mousestr * mouse);
+extern os_error * sendsave3(int filetype,char * filename,wimp_msgstr * msg);
+extern os_error * opensave(char * name,int type,savefn save);
+extern os_error * setsave2(intsavefn intsave,saveinfofn saveinfo);
+extern os_error * setsave0(int type,savefn xsave);
+extern os_error * closesave(void);
+extern os_error * setsaveoptions(int options,saveoptionstr * optionstr,
+                                                                int * opt);
+
+
+extern os_error * setsave3(ramsavefn xramsave);
+extern int        saveram(int flags);
+extern int        getsavehandle(void);
+
+extern os_error * setsave4(savemousefn xsavemouse);
+

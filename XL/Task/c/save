@@ -1,0 +1,538 @@
+/*->c.save */
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <signal.h>
+#include <ctype.h>
+#include <time.h>
+
+#include "h.os"
+#include "h.wimp"
+#include "h.werr"
+
+
+#include "h.wos"
+#include "h.mym"
+#include "h.poll"
+#include "h.fsx"
+#include "h.drag"
+#include "h.bits"
+#include "h.err"
+#include "h.temp"
+#include "h.etc"
+#include "h.key"
+#include "h.txcb"
+
+
+#include "h.save"
+
+
+/****************************************************************************/
+                       /* code for dragging save icons */
+
+
+       int             saveref;    /* reference for save message             */
+static int             saveftype;  /* file type for the above                */
+static int             savehandle;
+static savefn          save;
+static savefn          zsave;
+static intsavefn       intsave;
+static saveinfofn      saveinfo;
+static savemousefn     savemouse;
+static int             sopts;       /* number of save options         */
+static saveoptionstr * saveoption;  /* fns called on selection option */
+static int           * sopt;        /* address of current option      */
+static int             setoptions;
+static int             savebuttons;
+static ramsavefn       ramsave;
+
+
+static os_error * closesavez(void);
+
+
+
+
+os_error * sendsave(int filetype,char * filename,mousestr * mouse)
+{
+ os_error    * err;
+ char        * p;
+ wimp_msgstr   msg;
+ int           len;
+ int           estsize;
+
+ if(saveinfo) err=saveinfo(&estsize);
+ else         
+ {
+  err=NULL;
+  estsize=1;  /* could be -1 */
+ }
+
+ if(!err)
+ {
+  p=fs_leaf(filename);
+  len=strlen(p)+1;
+  len=(len+3) & (~3);
+
+  msg.hdr.size=48+len;
+  msg.hdr.task=taskhandle;
+  msg.hdr.your_ref=0;
+  msg.hdr.action=(wimp_msgaction)1;
+
+  msg.data.datasave.w=mouse->handle;
+  msg.data.datasave.i=mouse->icon;
+  msg.data.datasave.x=mouse->x;
+  msg.data.datasave.y=mouse->y;
+  msg.data.datasave.estsize=estsize+1; /* so only need one message */
+  msg.data.datasave.type=filetype;
+  strcpy(msg.data.datasave.leaf,p);
+
+  err=wimp_sendwmessage((wimp_etype)17,&msg,mouse->handle,mouse->icon);
+
+  saveref=msg.hdr.my_ref;
+ }
+
+ return(err);
+}
+
+
+
+
+
+os_error * sendsave2(int filetype,char * name,mousestr * mouse)
+{
+ os_error * err;
+ int        task;
+
+ /* find out if we are loading stuff back into ourselves */
+
+
+
+ err=findwindowtask(mouse->handle,mouse->icon,&task);
+ if(!err)
+ {
+  dprintf(6,"task %x taskhandle %x",task,taskhandle);
+
+  if(task==taskhandle && intsave) 
+  {
+   err=intsave(mouse,name,filetype);
+   if(!err && (savebuttons!=0x10)) closesavez();
+  }
+  else
+  {
+   if(savemouse) err=savemouse(mouse,name,filetype);
+   else          err=sendsave(filetype,name,mouse);
+  }
+ }
+
+ return(err);
+}
+
+
+/* use for clipboard */
+
+os_error * sendsave3(int filetype,char * filename,wimp_msgstr * msg1)
+{
+ os_error    * err;
+ char        * p;
+ wimp_msgstr   msg;
+ int           len;
+ int           estsize;
+
+ if(saveinfo) err=saveinfo(&estsize);
+ else         
+ {
+  err=NULL;
+  estsize=1;  /* could be -1 */
+ }
+
+ if(!err)
+ {
+  msg=*msg1;
+
+  p=fs_leaf(filename);
+  len=strlen(p)+1;
+  len=(len+3) & (~3);
+
+  msg.hdr.size=48+len;
+  msg.hdr.task=taskhandle;
+  msg.hdr.your_ref=msg1->hdr.my_ref;
+  msg.hdr.action=(wimp_msgaction)1;
+  msg.data.datasave.estsize=estsize+1; /* so only need one message */
+  msg.data.datasave.type=filetype;
+  strcpy(msg.data.datasave.leaf,p);
+
+  err=wimp_sendmessage((wimp_etype)17,&msg,msg1->hdr.task);
+  saveref=msg.hdr.my_ref;
+ }
+
+ return(err);
+}
+
+
+
+
+static os_error * savedragend(int handle,int userhandle,wimp_box * box)
+{
+ os_error * err;
+ mousestr   mouse;
+ char     * name;
+
+ err=dragaspritestop();
+ if(!err)
+ {
+  err=getpointer(&mouse);
+
+  if(!err && handle!=mouse.handle)
+  {
+   err=iconaddr(handle,1,&name);
+   if(!err)
+   {
+
+    err=sendsave2(saveftype,name,&mouse);
+   }
+  }
+ }
+
+ return(err);
+ box=box;
+ USE(userhandle);
+}
+
+
+
+/*****************************************************************************/
+
+
+
+/* try to save file */
+
+os_error * savefile(char * filename,int type)
+{
+ os_error * err;
+ mousestr   m;
+ char       name[FSMAXPATH];
+
+ if(!filename)
+ {
+  type=saveftype;
+ }
+ else
+ {
+  xstrcpy(name,filename);
+  filename=name;
+ }
+
+ if(zsave) return(zsave(filename,type));
+
+ err=getpointer(&m);
+
+ if(!filename)   /* we are doing a ram save */
+ {
+  err=iconaddr(savehandle,1,&filename);
+  filename=fs_leaf(filename);
+ }
+ else
+ if(
+    strlen(fs_leaf(filename))==strlen(filename) && 
+    cstrcmp(filename,"<Wimp$Scrap>") &&
+    cstrcmp(filename,"<Printer$Scrap>")
+   ) err=geterror(ESVDG);
+
+
+ if(!err && save) err=save(filename,type);
+
+
+ if(!err && !(savebuttons==0x10)) closesavez();
+
+ return(err);
+}
+
+
+
+
+static os_error * savefiledeflt(void)
+{
+ os_error * err;
+ char     * filename;
+
+ err=iconaddr(savehandle,1,&filename);
+ if(!err) err=savefile(filename,saveftype);
+
+ return(err);
+}
+
+
+
+
+
+
+static os_error * savedrag(wimp_mousestr * m)
+{
+ os_error * err;
+
+ savebuttons=m->bbits;
+ err=dragicon(m->x,m->y,m->w,m->i);
+ if(!err) err=dragasprite(m->w,m->i);
+ if(!err) err=startdrag(savehandle,0,savedragend);
+ return(err);
+}
+
+
+
+static void writetypes(char * name,int type)
+{
+ char string[32];
+
+ saveftype=type;
+
+ if(type==DIRECTORY) strcpy(string,"directory");
+ else                sprintf(string,"file_%03x",type);
+ if(wimp_spriteop(24,string)) strcpy(string,"file_xxx");
+
+ if(savehandle)
+ {
+  writeicon(savehandle,1,name);
+  writeicon(savehandle,0,string);
+ }
+}
+
+
+
+static os_error * setoption(int opt)
+{
+ os_error * err;
+ int        type;
+ char       name[FSMAXPATH];
+ char     * p;
+
+ type=saveftype;
+ iconaddr(savehandle,1,&p);
+ xstrncpy(name,p,sizeof(name));
+
+ err=deselect(savehandle,3+(*sopt));
+ if(saveoption[opt].fn) err=saveoption[opt].fn(savehandle,opt,&type,name);
+ select(savehandle,3+(*sopt));
+ writetypes(name,type);
+
+ return(err);
+}
+
+
+
+
+
+static os_error * savekey(int handle,int userhandle,int icon,int * key) 
+{
+ os_error * err;
+ int        ch;
+
+ err=NULL;
+ ch=*key;
+
+ if(ch==13) err=savefiledeflt();
+ else
+ if(ch==27) err=closesavez();
+ else 
+ if(ch>=F1 && ch<=(F1+sopts))
+ {
+  setoption(ch-F1);
+ }
+ else return(txcbkey(key,handle,icon));
+
+ *key=-1;
+
+ return(err);
+
+ USE(icon);
+ USE(handle);
+ USE(userhandle);
+}
+
+
+
+
+
+static os_error * saveicon(int handle,int userhandle,wimp_mousestr * m)
+{
+ os_error * err;
+ int        opt;
+
+ err=NULL;
+
+ if(m->i==2) 
+ {
+  err=savefiledeflt();
+ }
+ else
+ if(m->i==0 && (m->bbits==0x40 || m->bbits==0x10)) err=savedrag(m);
+ else
+ if(m->i>2)
+ {
+  opt=m->i-3;
+  if(opt>=0 && opt<sopts) err=setoption(opt);
+ }
+
+ return(err);
+
+ USE(handle);
+ USE(userhandle);
+}
+
+
+os_error * closesave(void)
+{
+ remkeyevent(savekey,savehandle,0);
+ remclickevent(saveicon,savehandle,0);
+ remhelpevent(NULL,savehandle,TSAVE);
+ closedown(&savehandle);
+ return(NULL);
+}
+
+
+static os_error * closesavez(void)
+{
+ zapmenu();
+ return(closesave());
+}
+
+
+
+static void setupsavetype(int ftype)
+{
+ saveftype=ftype;
+}
+
+
+
+#define SAVETOP  184
+#define SAVESTEP 52
+
+
+/* start save */
+
+os_error * setsave(char * name,int type,savefn xsave,int * handle)
+{
+ os_error * err;
+ int        i;
+ int        h;
+
+ if(savehandle) closesave();
+
+ err=NULL;
+
+ save=xsave;
+ intsave=NULL;
+ zsave=NULL;
+ ramsave=NULL;
+ saveinfo=NULL;
+ savemouse=NULL;
+
+ if(!setoptions) sopts=0;
+ else            setoptions=0;
+
+ h=SAVETOP+((sopts>1)?(sopts*SAVESTEP):0);
+
+ if(!savehandle)
+ {
+  err=createwindowheight(TSAVE,&savehandle,h);
+  if(!err)
+  {
+   addkeyevent(savekey,savehandle,0);
+   addclickevent(saveicon,savehandle,0);
+   addhelpevent(NULL,savehandle,TSAVE);
+  }
+ }
+
+ if(!err)
+ {
+  if(sopts)
+  {
+   for(i=0;i<sopts;i++)
+   {
+    writeiconf(savehandle,3+i,"%-12s",saveoption[i].name);
+   }
+   setoption(*sopt);
+  }
+  else
+  {
+   setupsavetype(type);
+   writetypes(name,type);
+  }
+  *handle=savehandle;
+ }
+
+ return(err);
+}
+
+
+os_error * opensave(char * name,int type,savefn save)
+{
+ os_error * err;
+ int        handle;
+
+ err=setsave(name,type,save,&handle);
+ if(!err) err=menuwindow(handle);
+
+ return(err);
+}
+
+
+os_error * setsave0(int type,savefn xsave)
+{
+ zsave=xsave;
+ intsave=NULL;
+ setupsavetype(type);
+ return(NULL);
+}
+
+
+os_error * setsave2(intsavefn xintsave,saveinfofn xsaveinfo)
+{
+ intsave=xintsave;
+ saveinfo=xsaveinfo;
+ return(NULL);
+}
+
+
+os_error * setsaveoptions(int options,saveoptionstr * optionstr,int * opt)
+{
+ sopts=options;
+ saveoption=optionstr;
+ sopt=opt;
+ setoptions=(sopts!=0);
+ return(NULL);
+}
+
+
+
+
+
+os_error * setsave3(ramsavefn xramsave)
+{
+ ramsave=xramsave;
+ return(NULL);
+}
+
+
+int saveram(int flags)
+{
+ if(ramsave) return(ramsave(flags));
+ return(0);
+}
+
+
+int getsavehandle(void)
+{
+ return(savehandle);
+}
+
+
+
+os_error * setsave4(savemousefn xsavemouse)
+{
+ savemouse=xsavemouse;
+ return(NULL);
+}
+
+

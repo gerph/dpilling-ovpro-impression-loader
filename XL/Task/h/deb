@@ -1,0 +1,12 @@
+/*->h.deb */
+
+typedef void (*debfn)(void);   
+
+extern void dprintf(int line,char * format, ...);
+extern void debugenable(debfn xdeb);
+extern int  debugactive(void);
+extern int  debugactive2(void);
+
+extern void lprintf(char * format, ...);
+extern void lerror(char * v,os_error * err);
+

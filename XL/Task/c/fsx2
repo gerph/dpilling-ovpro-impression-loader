@@ -1,0 +1,123 @@
+/*->c.fsx2 */
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+#include <stdarg.h>
+
+
+#include "h.swis"
+#include "h.kernel"
+#include "h.bbc"
+#include "h.os"
+
+
+#include "h.err"
+
+#include "h.fsx"
+
+
+
+
+/* takes a filename, and a path                                  */
+/* returns a new filename, which lives down the path, but is new */
+
+os_error * makefilename(char * oldleaf,char * newpathname,char * path,int over)
+{
+ os_error * err;
+ int        i;
+ int        j;
+ int        lentemp;
+ char    *  p;
+ char       newleaf[FSMAXLEAF];
+ char       temp[16];
+ int        object;
+
+ err=NULL;
+
+ strncpy(newleaf,oldleaf,FSMAXLEAF-1);
+ newleaf[FSMAXLEAF-1]=0;
+
+ j=0;
+ for(i=0;i<strlen(newleaf);i++)
+ {
+ /* newleaf[i] &=0x7F; */
+
+  switch(newleaf[i])
+  {
+    case '.':
+             newleaf[j]='/';
+             break;
+
+    case ' ':
+             newleaf[j]=' ';
+             break;
+
+    case '#':
+             newleaf[j]='?';
+             break;
+
+    case '&':
+             newleaf[j]='+';
+             break;
+
+    case '@':
+             newleaf[j]='=';
+             break;
+
+    case '%':
+             newleaf[j]=';';
+             break;
+
+    case '$':
+             newleaf[j]='<';
+             break;
+
+    case '^':
+             newleaf[j]='>';
+             break;
+
+
+    case '"':
+    case '*':
+    case ',':
+    case ':':
+    case'\\':
+    case '|':
+    case 127:
+             newleaf[j]='X';
+             break;
+
+     default:
+             newleaf[j]=newleaf[i];
+             break;
+  }
+  j++;
+ }
+
+ if(strlen(newleaf)==0) strcpy(newleaf,"DEFAULT");
+
+ strcpy(newpathname,path);
+ if(*newpathname) strcat(newpathname,".");
+ p=newpathname+strlen(newpathname);
+ *temp=0;
+
+ for(i=0;i<1000;i++)
+ {
+  lentemp=strlen(temp);
+  strcpy(p,temp);
+  strcpy(p+lentemp,newleaf);
+  err=fs_exists(newpathname,&object);
+  if(err || !object || over) break;
+  sprintf(temp,"%02d",i);
+ }
+
+ return(err);
+}
+
+
+
+
+

@@ -1,0 +1,7 @@
+/*->h.crc */
+
+extern int  crcbyte32(int crc,int c);
+
+extern void crcblock32(int * crcp,register char * p,register int len);
+extern void crcblock(int * crcp,register char * p,register int len);
+

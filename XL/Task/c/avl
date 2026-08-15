@@ -1,0 +1,579 @@
+/*->c.avl */
+
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <stdio.h>
+#include <locale.h>
+
+
+#include "h.avl"
+
+
+
+
+
+
+
+typedef int DIR;                      /* type for indexing siblings */
+
+#define        L       ((DIR) 0)
+#define        R       ((DIR) 1)
+
+#define        LEFT    sibls[L]       /* left sibling pointer NODE field */
+#define        RIGHT   sibls[R]       /* right sibling pointer NODE field */
+
+
+#define avlptr(base,p) (((avlstr*)((base)+(p))))
+
+
+
+
+/*
+ * Direction gives direction in which child NODE c is under parent NODE p.
+ */
+
+#define        direction(p,c) ((DIR) ((p)->RIGHT==(c)))
+
+/*
+ * Cmp_dir gives direction corresponding with compare value v (R iff v > 0).
+ */
+
+#define        cmp_dir(v)      ((DIR) ((v) > 0))
+
+/*
+ * Siblingp yields ptr to left (d == L) or right (d == R) child of NODE n.
+ */
+
+#define        siblingp(n,d,base)  ((avlptr((base),(n))->sibls) + (d))
+
+#define        sibling(n,d)  ((n)->sibls + (d))
+
+/*
+ * Parentp yields ptr to parent's ptr to NODE n, or root ptr r if n is 0.
+ */
+
+
+/*
+
+#define        parentp(r, n)   ((avlptr((n))->parent) == NIL_NODE ? (r) : \
+               siblingp((avlptr((n))->parent), direction((avlptr((n))->parent), (n))))
+
+ */
+
+
+
+/*
+ * Dir_bal yields balance value corresponding to DIR d.
+ */
+
+#define        dir_bal(d)      ((d) == L ? -1 : 1)
+
+
+
+
+static int * parentp(int * rootp,int sb,char * base)
+{
+ avlstr * p;
+ int    * q;
+ int      pa;
+
+ p=avlptr(base,sb);
+ pa=p->parent;
+
+ if(pa==NIL_NODE) return(rootp);
+
+ q=siblingp(pa,direction(avlptr(base,pa),sb),base);
+
+ return(q);
+}
+
+
+
+/*
+ * Balance the subtree rooted at sb that has become to heavy on side d
+ * by single rotation of sb and sb_next.
+ * Also adjusts sibling pointer of the parent of sb, or *rootp if sb is
+ * the top of the entire tree.
+ *
+ *             sb              sb_next         Single rotation: Adding x or
+ *            /  \            /       \        deleting under 3 caused
+ *     sb_next    3          1         sb      rotation.  Same holds for mirror
+ *     /       \             |        /  \     image.  Single_rotation returns
+ *    1                2       ==>   x       2    3    top of new balanced tree.
+ *    |                |                     |
+ *    x                y                     y
+ */
+
+static int single_rotation(int * rootp,int sb,int sb_next,DIR d,char * base)
+{
+ *siblingp(sb,d,base)=*siblingp(sb_next,!d,base);
+ *siblingp(sb_next,!d,base)=sb;
+
+ avlptr(base,sb)->balance-=avlptr(base,sb_next)->balance;
+ avlptr(base,sb_next)->balance=-avlptr(base,sb)->balance;
+
+ *parentp(rootp,sb,base)=sb_next;
+ avlptr(base,sb_next)->parent=avlptr(base,sb)->parent;
+ avlptr(base,sb)->parent=sb_next;
+ if(*siblingp(sb,d,base)!=NIL_NODE)
+ avlptr(base,(*siblingp(sb,d,base)))->parent=sb;
+
+ return(sb_next);
+}
+
+
+
+
+/*
+ * Balance the subtree rooted at sb that has become to heavy on side d
+ * by double rotation of sb and sb_next.
+ * Also adjusts sibling pointer of the parent of sb, or *rootp if sb is
+ * the top of the entire tree.
+ *
+ *             sb                  sb_next2       Double rotation: Adding x or
+ *            /  \                /        \      x', or deleting under 4
+ *     sb_next    \            sb_next      sb    caused rotation. Same holds
+ *     /       \    \         /       \    /  \   for the mirror image.
+ *    1   sb_next2   4  ==>  1         2  3    4  Double_rotation returns top
+ *       /        \                    |  |       of new balanced tree.
+ *      2          3                   x  x'
+ *      |         |
+ *      x         x'
+ */
+
+static int double_rotation(int * rootp,int sb,int sb_next,DIR d,char * base)
+{
+ int      sb_next2;
+ avlstr * sb_n2p;
+ avlstr * sb_np;
+ avlstr * sbp;
+
+ sb_np=avlptr(base,sb_next);
+ sb_next2=*sibling(sb_np,!d);
+ sb_n2p=avlptr(base,sb_next2);
+ sbp=avlptr(base,sb);
+
+ *sibling(sb_np,!d)=*sibling(sb_n2p,d);
+ *sibling(sbp,d)    =*sibling(sb_n2p,!d);
+ *sibling(sb_n2p,d)=sb_next;
+ *sibling(sb_n2p,!d)=sb;
+
+ if(sb_n2p->balance==sb_np->balance) sb_np->balance=-sb_np->balance;
+ else                                sb_np->balance=0;
+
+ if(sb_n2p->balance==sbp->balance)   sbp->balance=-sbp->balance;
+ else                                sbp->balance=0;
+
+ sb_n2p->balance=0;
+
+ *parentp(rootp,sb,base)=sb_next2;
+ sb_n2p->parent=sbp->parent;
+ sbp->parent=sb_np->parent=sb_next2;
+
+ if(*sibling(sb_np,!d)!=NIL_NODE)
+               avlptr(base,*sibling(sb_np,!d))->parent=sb_next;
+
+ if(*sibling(sbp,d) != NIL_NODE)
+               avlptr(base,*sibling(sbp,d))->parent=sb;
+
+ return(sb_next2);
+}
+
+
+
+
+
+
+
+
+/*
+ * Balance the subtree rooted at sb that has become to heavy on side d.
+ * Also adjusts sibling pointer of the parent of sb, or *rootp if sb is
+ * the top of the entire tree.
+ */
+
+static int balance(int * rootp,int sb,DIR d,char * base)
+{
+ int sb_next=*siblingp(sb,d,base);
+
+ if(avlptr(base,sb_next)->balance==-dir_bal(d))
+               return(double_rotation(rootp,sb,sb_next,d,base));
+ else
+               return(single_rotation(rootp,sb,sb_next,d,base));
+}
+
+
+
+
+
+
+
+
+
+/*
+ * Tsearch adds node key to tree rooted by *rootp, using compar for
+ * comparing elements.  It returns the pointer to the NODE in which
+ * the (possibly already existing) key pointer resides.
+ */
+
+
+int avlsearch(int newnode,int * rootp,char * base,avlcmpfn avlcmp)
+{
+ int      parent;
+ int      child;
+ DIR      d;
+ int      cmp;
+ avlstr * childp;
+ avlstr * nnode;
+ avlstr * pp;
+
+
+ cmp=0; /* compiler */
+
+ nnode=avlptr(base,newnode);
+
+ if(rootp==NULL) return(NIL_NODE);
+
+ /* find place where key should go */
+
+ parent=NIL_NODE;
+ child=*rootp;
+ while(child!=NIL_NODE)
+ {
+  childp=avlptr(base,child);
+  if((cmp=avlcmp((void*)&nnode->key,(void*)&childp->key))==0) return(child);
+  parent=child;
+  child=*sibling(childp,cmp_dir(cmp));
+ }
+
+ /* create new node and set its parent's sibling pointer */
+
+ nnode->balance=0;
+ nnode->parent=parent;
+ nnode->LEFT=nnode->RIGHT=NIL_NODE;
+ if(parent==NIL_NODE)
+ {
+  *rootp=newnode;
+  return(newnode);                   /* just created tree */
+ }
+
+ *siblingp(parent,cmp_dir(cmp),base)=newnode;
+ child=newnode;
+
+ /*
+  * Back up until tree is balanced.  This is achieved when either
+  * the tree is balanced by rotation or a node's balance becomes 0.
+  */
+
+ do
+ {
+  pp=avlptr(base,parent);
+  d=direction(pp,child);
+  if(pp->balance==dir_bal(d))
+  {
+   balance(rootp,parent,d,base);
+   return(newnode);
+  }
+  else
+  if((pp->balance+=dir_bal(d))==0) return(newnode);
+  child=parent;
+  parent=pp->parent;
+ } while(parent!=NIL_NODE);
+
+ return(newnode);
+}
+
+
+/*
+ * Tfind searches node key in the tree rooted by *rootp, using compar for
+ * comparing elements.  It returns the pointer to the NODE in which
+ * the key pointer resides, or 0 if key is not present.
+ */
+
+
+int avlfind(void * key,int rootp,char * base,avlcmpfn avlcmp)
+{
+ avlstr * nodep;
+ int      node;
+ int      cmp;
+
+ if(rootp==-1) return(NIL_NODE);
+
+ node=rootp;
+ while(node!=NIL_NODE)
+ {
+  nodep=avlptr(base,node);
+  if((cmp=avlcmp(key,(void*)&nodep->key))==0) return(node);
+  node=*sibling(nodep,cmp_dir(cmp));
+ }
+
+ return(NIL_NODE);
+}
+
+
+
+
+
+
+/* moves pointers to src to dest */
+
+static void tmovenode(int dest,int src,int * rootp,char * base)
+{
+ avlstr * srcp;
+ avlstr * destp;
+ avlstr * childp;
+ avlstr * sparentp;
+ int      sleft;
+ int      sright;
+ int    * p;
+
+ srcp=avlptr(base,src);
+ destp=avlptr(base,dest);
+
+ sleft=srcp->LEFT;
+ sright=srcp->RIGHT;
+
+ destp->parent=srcp->parent;
+
+ if(destp->parent!=NIL_NODE)
+ {
+  sparentp=avlptr(base,srcp->parent);
+  p=sibling(sparentp,direction(sparentp,src));
+  *p=dest;
+ }
+ else
+ {
+  *rootp=dest;
+ }
+
+ destp->LEFT=sleft;
+ if(destp->LEFT!=NIL_NODE)
+ {
+  childp=avlptr(base,destp->LEFT);
+  childp->parent=dest;
+ }
+
+ destp->RIGHT=sright;
+ if(destp->RIGHT!=NIL_NODE)
+ {
+  childp=avlptr(base,destp->RIGHT);
+  childp->parent=dest;
+ }
+}
+
+
+
+
+
+
+
+
+int avldelete(int node,int * rootp,char * base,avlcmpfn avlcmp)
+{
+ int      parent;
+ int      child;
+ int      dnode;
+ int      dparent;
+ DIR      d;
+ int      cont_bal;
+ int      cmp;
+ avlstr * childp;
+ avlstr * nodep;
+ avlstr * dnodep;
+ avlstr * parentp;
+ avlstr * dparentp;
+
+ if(*rootp==-1) return(NIL_NODE);
+
+
+ /* find node to delete */
+
+ nodep=avlptr(base,node);
+ child=*rootp;
+ do
+ {
+  childp=avlptr(base,child);
+  if((cmp=avlcmp((void*)&nodep->key,(void*)&childp->key))==0) break;
+  child=*sibling(childp,cmp_dir(cmp));
+ } while(child!=NIL_NODE);
+
+ if(child==NIL_NODE) return(NIL_NODE);  /* key not in tree */
+
+ /* the node was found; get its successor (if any) to replace it */
+
+ dnode=child;
+ dnodep=childp;
+ dparent=dnodep->parent;
+ child=childp->RIGHT;
+ if(child==NIL_NODE) 
+ {                /* no successor for key */
+  if((child=dnodep->LEFT)!=NIL_NODE)
+  {
+   childp=avlptr(base,child);
+   childp->parent=dparent; /* set new parent */
+  }
+
+  if(dparent==NIL_NODE)
+  {
+   *rootp=child;
+   return(NIL_NODE);             /* just deleted the root */
+  }
+
+  dparentp=avlptr(base,dparent);
+  d=direction(dparentp,dnode);  /* for back up */
+  *sibling(dparentp,d)=child;  /* replace by left child */
+
+  parent=dparent;
+  parentp=dparentp;
+ }
+ else 
+ {                                  /* key's successor exists */
+  childp=avlptr(base,child);
+  while(childp->LEFT!=NIL_NODE)
+  {
+   child=childp->LEFT;
+   childp=avlptr(base,child);
+  }
+
+  parent=childp->parent;
+  parentp=avlptr(base,parent);
+
+  d=direction(parentp,child);           /* for back up */
+  *sibling(parentp,d)=childp->RIGHT;
+  if(childp->RIGHT!=NIL_NODE)
+  {
+   nodep=avlptr(base,childp->RIGHT);
+   nodep->parent=parent;               /* set new parent */
+  }
+
+  /* now child, replaces dnode */
+  tmovenode(child,dnode,rootp,base);
+  childp->balance=dnodep->balance;
+
+  if(parent==dnode)
+  {
+   parent=child;
+   parentp=avlptr(base,parent);
+  }
+
+ }
+
+ /*
+  * Back up until tree is balanced.  This is achieved when either
+  * the tree is balanced by rotation but not made shorter, or a
+  * node's balance was 0 before deletion.
+  */
+
+ do 
+ {
+  if(parentp->balance==dir_bal(!d))
+  {
+   cont_bal=(avlptr(*sibling(parentp,!d),base)->balance!=0);
+   parent=balance(rootp,parent,!d,base);
+   parentp=avlptr(base,parent);
+  }
+  else
+  {
+   cont_bal=(parentp->balance!=0);
+   parentp->balance+=dir_bal(!d);
+  }
+
+  child=parent;
+
+  if((parent=parentp->parent)==NIL_NODE)
+  {
+   return(dparent);         /* we reached the root */
+  }
+
+  parentp=avlptr(base,parent);
+  d=direction(parentp,child);
+
+ }while(cont_bal);
+
+ return(dparent);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+#define PREORDER  0
+#define POSTORDER 1
+#define ENDORDER  2
+#define LEAFORDER 3
+
+
+int avlwalk(int node,char * base,int * state)
+{
+ int      visit;
+ avlstr * nodep;
+
+ if(node==-1) return(NIL_NODE);
+
+ visit=*state;
+
+ /* run down tree from top to bottom, left to right */
+
+ do
+ {
+  nodep=avlptr(base,node);
+
+  switch(visit)
+  {
+   case PREORDER:  /* before visiting left child */
+                 if(nodep->LEFT==NIL_NODE && nodep->RIGHT==NIL_NODE)
+                 {
+                  visit=LEAFORDER;
+                 }
+                 else
+                 if(nodep->LEFT!=NIL_NODE)
+                 {
+                  node=nodep->LEFT;
+                 }
+                 else
+                 {
+                  visit=POSTORDER;
+                 }
+                 break;
+
+  case POSTORDER:         /* between visiting children */
+                 if(nodep->RIGHT!=NIL_NODE)
+                 {
+                  node=nodep->RIGHT;
+                  visit=PREORDER;
+                 }
+                 else
+                 {
+                  visit=ENDORDER;
+                 }
+                 break;
+
+   case ENDORDER:                  /* after visiting children */
+  case LEAFORDER:
+                 if(nodep->parent!=NIL_NODE)
+                 {
+                  if(direction(avlptr(base,nodep->parent),node)==L) 
+                                                       visit=POSTORDER;
+                  else                                 visit=ENDORDER;
+                 }
+                 node=nodep->parent;
+                 break;
+  }
+ } while(node!=NIL_NODE && visit!=POSTORDER && visit!=LEAFORDER);
+
+
+ *state=visit;
+
+ return(node);
+} 
+
+
+

@@ -1,0 +1,141 @@
+/*->c.werr */
+
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <signal.h>
+#include <ctype.h>
+#include <time.h>
+#include <stdarg.h>
+
+
+#include "h.swis"
+#include "h.os"
+#include "h.wimp"
+#include "h.wimpt"
+
+#include "h.trans"
+#include "h.err"
+
+#include "h.werr"
+
+
+
+
+static int myreporterror(os_error* er,wimp_errflags flags)
+{
+ os_regset   rx;
+
+ /* resetpointer();  */
+
+ if(er->errnum==EREPORTED) return(0);
+
+ errmasklocal(er);
+
+ rx.r[0]=(int)er;
+ rx.r[1]=((int)flags)|(1<<8);
+ rx.r[2]=(int)wimpt_programtextname();
+ rx.r[3]=(int)wimpt_programsprite();
+ rx.r[4]=1;
+ rx.r[5]=0;
+
+ os_swix(Wimp_ReportError,&rx);
+
+ errsetlocal(er);
+
+ return(rx.r[1]);
+}
+
+
+
+
+static int myreporterrors(char * message,wimp_errflags flags)
+{
+ os_error e;
+
+ e.errnum=0;
+ strcpy(&e.errmess[0],message);
+ return(myreporterror(&e,flags));
+}
+
+
+
+static werrexitfn werrexit;
+
+void werrsetexit(werrexitfn xwerrexit)
+{
+ werrexit=xwerrexit;
+}
+
+
+static void werrcallexit(int code)
+{
+ if(werrexit) werrexit(code);
+ exit(code);
+}
+
+
+void werr(int flags,char* format,...)
+{
+ va_list va;
+ os_error e;
+ char     buff[256];
+
+ e.errnum=0;
+ va_start(va,format);
+
+ strcpy(buff,format);
+ trans(buff,256);
+
+ vsprintf(&e.errmess[0],buff,va);
+
+ va_end(va);
+
+ trans(e.errmess,sizeof(e.errmess));
+
+
+ myreporterror(&e,(wimp_errflags)(flags==WERRMSG?(16+1):0));
+
+ if(flags==WERRFTL) werrcallexit(1);
+}
+
+
+
+void errorbox(char * message)
+{
+ myreporterrors(message,(wimp_errflags)0);
+}
+
+
+int messagebox(char * message)
+{
+ return(myreporterrors(message,(wimp_errflags)(1+16)));
+}
+
+
+void fatalerror(char * message)
+{
+ errorbox(message);
+ werrcallexit(1);
+}
+
+void abend(os_error * e)
+{
+ /* if e is true, abend */
+ if(e)
+ {
+  myreporterror(e,(wimp_errflags)0);
+  werrcallexit(1);
+ }
+}
+
+
+void report(os_error * e)
+{
+ if(e)
+ {
+  myreporterror(e,(wimp_errflags)0);
+ }
+}
+

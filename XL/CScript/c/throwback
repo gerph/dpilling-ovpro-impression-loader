@@ -1,0 +1,84 @@
+/*->c.throwback */
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <signal.h>
+#include <stdarg.h>
+#include <ctype.h>
+#include <time.h>
+#include <locale.h>
+#include <setjmp.h>
+
+
+#include "h.os"
+
+
+
+#include "h.throwback"
+
+
+
+os_error * throwbackstart(void)
+{
+ os_error * ep;
+ os_regset  rx;
+
+ ep=os_swix(DDEUtils_ThrowbackStart,&rx);
+
+ return(ep);
+}
+
+
+os_error * throwbackend(void)
+{
+ os_error * ep;
+ os_regset  rx;
+
+ ep=os_swix(DDEUtils_ThrowbackEnd,&rx);
+
+ return(ep);
+}
+
+
+
+os_error * throwbacksend(int reason,...)
+{
+ os_error * ep;
+ os_regset  rx;
+
+ va_list args;
+
+ va_start(args, reason);
+
+ rx.r[0]=reason;
+
+ switch(reason)
+ {
+  case   Throwback_ReasonProcessing:
+                                    rx.r[2]=(int)(va_arg(args,int));
+                                    break;
+
+  case Throwback_ReasonErrorDetails:
+                                    rx.r[2]=(int)(va_arg(args,int));
+                                    rx.r[3]=va_arg(args,int);
+                                    rx.r[4]=va_arg(args,int);
+                                    rx.r[5]=(int)(va_arg(args,int));
+                                    break;
+
+  case  Throwback_ReasonInfoDetails:
+                                    rx.r[2]=(int)(va_arg(args,int));
+                                    rx.r[3]=va_arg(args,int);
+                                    rx.r[4]=0;
+                                    rx.r[5]=(int)(va_arg(args,int));
+                                    break;
+ }
+
+
+ va_end(args);
+
+ ep=os_swix(DDEUtils_ThrowbackSend,&rx);
+
+ return(ep);
+}
+

@@ -1,0 +1,63 @@
+/*->c.akbd */
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <signal.h>
+#include <ctype.h>
+#include <time.h>
+#include <stdarg.h>
+
+#include "h.os"
+#include "h.bbc"
+#include "h.akbd"
+
+
+
+int akbd_pollsh(void)
+{
+  int x = -1;
+  int y = 255;
+  (void) os_byte(129, &x, &y);
+  return(x==255 && y==255);
+}
+
+int akbd_pollctl(void)
+{
+  int x = -2;
+  int y = 255;
+  (void) os_byte(129, &x, &y);
+  return(x==255 && y==255);
+}
+
+int akbd_pollalt(void)
+{
+  int x = -3;
+  int y = 255;
+  (void) os_byte(129, &x, &y);
+  return(x==255 && y==255);
+
+}
+
+                     
+/* any keys other than shifts pressed? */
+
+int akbd_others(void)
+{
+  int x = 9;
+  int y = 0;
+  (void) os_byte(121, &x, &y);
+  return(x!=255);
+}
+
+
+
+
+int bbc_inkey(int delay)
+{
+ int x = delay;
+ int y = delay>>8;
+ (void) os_byte(129, &x, &y);
+ if(!y) return(x);
+ else   return(-1);
+}

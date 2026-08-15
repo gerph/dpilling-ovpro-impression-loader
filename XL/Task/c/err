@@ -1,0 +1,147 @@
+/*->c.err */
+
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <stdio.h>
+
+
+#include "h.os"
+
+#include "h.trans"
+#include "h.etc"
+
+#include "h.err"
+
+
+static os_error   errblock;
+static errlink  * firstlink;
+
+#define LOCALERROR 0x0  // designed to stop local errors reaching desktop
+                        // but how do you read error numbers...
+
+
+
+static int errsave;
+
+void errmasklocal(os_error * err)
+{
+ if(err==&errblock)
+ {
+  errsave=err->errnum;
+  err->errnum=0;
+ }
+}
+
+
+void errsetlocal(os_error * err)
+{
+ if(err==&errblock)
+ {
+  err->errnum=errsave;
+ }
+}
+
+
+os_error * adderrortable(errtag * tags,errlink * link)
+{
+ link->tags=tags;
+ link->next=firstlink;
+ firstlink=link;
+
+ return(NULL);
+}
+
+
+static char * errmsg(int errno)
+{
+ errlink  * link;
+ errtag   * tag;
+
+ link=firstlink;
+
+ while(link)
+ {
+  tag=link->tags;
+  while(tag->errno!=ELAST)
+  {
+   if(tag->errno==errno)
+   {
+    return(tag->errmsg);
+   }
+   tag++;
+  }
+  link=link->next;
+ }
+
+ return("{ENOE}");
+}
+
+
+os_error * geterror(int errno)
+{
+ os_error * err;
+
+ if(!errno) return(NULL);
+
+ errblock.errnum=errno;
+ strcpy(errblock.errmess,errmsg(errno));
+ err=trans(errblock.errmess,sizeof(errblock.errmess));
+ if(!err) err=&errblock;
+ return(err);
+}
+
+
+os_error * geterrorf(int errno,...)
+{
+ va_list    args;
+ char       format[256];
+ os_error * err;
+
+ errblock.errnum=errno;
+ strcpy(format,errmsg(errno));
+ trans(format,sizeof(format));
+
+ va_start(args,errno);
+ vsprintf(errblock.errmess,format,args);
+ va_end(args);
+
+ err=trans(errblock.errmess,sizeof(errblock.errmess));
+ if(!err) err=&errblock;
+ return(err);
+}
+
+
+os_error * generror(int errno,char * format, ...)
+{
+ va_list    args;
+ os_error * err;
+
+ errblock.errnum=errno;
+
+ va_start(args,format);
+ vsprintf(errblock.errmess,format,args);
+ va_end(args);
+
+ err=trans(errblock.errmess,sizeof(errblock.errmess));
+ if(!err) err=&errblock;
+
+ return(err);
+ USE(errno);
+}
+
+
+os_error * erroradd(os_error * err1,os_error * err2)
+{
+ if(err1) return(err1);
+ else     return(err2);
+}
+
+
+os_error * initerror(void)
+{
+ firstlink=NULL;
+ return(NULL);
+}
+
+

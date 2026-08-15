@@ -1,0 +1,488 @@
+/*->c.con */
+
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <stdio.h>
+#include <ctype.h>
+
+
+#include "h.os"
+
+#include "h.trans"
+
+#include "h.bf"
+#include "h.err"
+#include "h.etc"
+#include "h.fsx"
+
+#include "h.xx2con"
+
+
+static conlink  * firstlink;
+
+
+
+os_error * addcontable(contag * tags,conlink * link)
+{
+ link->tags=tags;
+ link->next=NULL;
+
+ link->next=firstlink;
+ firstlink=link;
+
+ return(NULL);
+}
+
+
+
+
+
+static os_error * savecontok(buffer * bf,conlink * link,contag * tag)
+{
+ os_error  * err;
+ int         value;
+ contokstr * tok;
+
+ value=*((int*)tag->address);
+
+ tok=tag->data.list;
+ while(tok && tok->name)
+ {
+  if(tok->value==value)
+  {
+   err=bf_printf(bf,"%s %s %s\n",link->name,tag->name,tok->name);
+   return(err);
+  }
+  tok++;
+ }
+
+ return(geterror(ENOTOKVAL));
+}
+
+
+
+
+
+
+
+static int xstring(char * p,char * string)
+{
+ char * q;
+ int    c;
+
+ q=p;
+
+ do
+ {
+  c=*string++;
+  if(c==' ') 
+  {
+   *p++='\\';
+   *p++='s';
+  }
+  else
+  {
+   *p++=c;
+  }
+ } while(c);
+
+ return(p-q-1);
+}
+
+
+
+static void getxstring(char * p,char * string)
+{
+ int c;
+
+ while(1)
+ {
+  c=*p++;
+  if(c<=' ') break;
+  if(c=='\\') 
+  {
+   c=*p++;
+   if(c=='s') c=' ';
+  }
+
+  *string++=c;
+ }
+
+ *string=0;
+}
+
+
+
+
+
+
+
+
+static os_error * saveconarray(buffer * bf,conlink * link,contag * tag)
+{
+ os_error        * err;
+ char              string[256];
+ char            * p;
+ char            * q;
+ int               count;
+ void            * address;
+ int               n;
+
+ err=NULL;
+
+ address=tag->address;
+ count=*(tag->data.array->y);
+ while(count--)
+ {
+  p=string+sprintf(string,"%s %s ",link->name,tag->name);
+
+  q=tag->data.array->types;
+  while(*q)
+  {
+   if(*q=='I') 
+   {
+    p+=sprintf(p,"%d",*((int*)address));
+    address=(void*)(((char*)address)+sizeof(int));
+    q++;
+   }
+   else
+   if(*q=='S')
+   {
+    n=0;
+    q++;
+    while(isdigit(*q)) {n=((*q)-'0')+n*10;q++;}
+    p+=xstring(p,(char*)address);
+    address=(void*)(((char*)address)+n);
+   }
+   *p++=' ';
+  }
+  *(p-1)='\n';
+  *p=0;
+
+  err=bf_write(bf,string,p-string);
+  if(err) break;
+ }
+ return(err);
+}
+
+
+
+
+
+
+os_error * saveconfig(char * name)
+{
+ os_error * err;
+ conlink  * link;
+ contag   * tag;
+ buffer     bf;
+ char       temp[256];
+ char     * p;
+
+
+          err=bf_open(name,'w',DEFBUFFSIZE,&bf);
+ if(!err) err=stdfileheader(&bf,fs_leaf(name));
+ if(!err)
+ {
+
+  link=firstlink;
+
+  while(link)
+  {
+   tag=link->tags;
+   while(tag->name)
+   {
+    switch(tag->type)
+    {
+     case CONINT:
+                 err=bf_printf(&bf,"%s %s %d\n",link->name,tag->name,
+                                                      *((int*)tag->address));
+                 break;
+
+     case CONSTR:
+                 if(tag->con)
+                 {
+                  tag->con(temp,1);
+                  p=temp;
+                 }
+                 else p=(char*)tag->address;
+
+                 err=bf_printf(&bf,"%s %s %s\n",link->name,tag->name,p);
+                 break;
+
+     case CONTOK:
+                 err=savecontok(&bf,link,tag);
+                 break;
+
+     case CONARRAY:
+                   err=saveconarray(&bf,link,tag);
+                   break;
+
+    }
+    tag++;
+    if(err) break;
+   }
+
+   if(err) break;
+   err=bf_printf(&bf,"\n");
+   if(err) break;
+
+   link=link->next;
+  }
+
+  err=bf_closec(&bf,err,name,0xFFF);
+ }
+ return(err);
+}
+
+
+
+
+
+
+
+
+/* a token is a non space, followed by a space or zero */
+
+static char * gettok(char * string,int * len)
+{
+ int    tlen;
+ char * p;
+ char * q;
+
+ p=string;
+ while(*p==' ') p++;
+ q=p;
+ while(*q>' ') q++;
+
+ tlen=q-p;
+ if(*q)
+ {
+  *q=0;
+  tlen++;
+ }
+
+ *len=tlen;
+
+ return(p);
+}
+
+
+
+
+
+static os_error * loadcontok(contag * tag,char * p)
+{
+ os_error  * err;
+ contokstr * tok;
+ int         len;
+
+ err=NULL;
+
+ tok=tag->data.list;
+ p=gettok(p,&len);
+
+ while(tok && tok->name)
+ {
+  if(!strcmp(tok->name,p))
+  {
+   *((int*)tag->address)=tok->value;
+   return(err);
+  }
+  tok++;
+ }
+
+ return(err);
+}
+
+
+
+
+
+
+static contag * lasttag;
+
+static os_error * loadconarray(contag * tag,char * p)
+{
+ os_error        * err;
+ char            * q;
+ static void     * address;
+ int               n;
+ int               len;
+
+ err=NULL;
+
+ if(tag!=lasttag) address=tag->address;
+ lasttag=tag;
+
+ q=tag->data.array->types;
+ while(*q)
+ {
+  p=gettok(p,&len);
+
+  if(*q=='I') 
+  {
+   sscanf(p,"%d",((int*)address));
+   address=(void*)(((char*)address)+sizeof(int));
+   q++;
+  }
+  else
+  if(*q=='S')
+  {
+   n=0;
+   q++;
+
+   while(isdigit(*q)) {n=((*q)-'0')+n*10;q++;}
+
+   getxstring(p,(char*)address);
+
+   address=(void*)(((char*)address)+n);
+  }
+  p+=len;
+ }
+
+ return(err);
+}
+
+
+
+
+
+
+
+static os_error * gettag(conlink * link,contag * tag,char * p)
+{
+ os_error * err;
+
+ err=NULL;
+
+ switch(tag->type)
+ {
+  case CONINT:
+              sscanf(p,"%d",(int*)tag->address);
+              break;
+
+
+  case CONSTR:
+              if(tag->con) tag->con(p,0);
+              else
+              if(strlen(p)<tag->data.len) strcpy((char*)tag->address,p);
+              break;
+
+
+  case CONTOK:
+              err=loadcontok(tag,p);
+              break;
+
+  case CONARRAY:
+              err=loadconarray(tag,p);
+              break;
+
+
+
+ }
+
+ return(err);
+
+ USE(link);
+}
+
+
+static conlink * findlink(char * name)
+{
+ conlink * link;
+
+ link=firstlink;
+
+/* dprintf(0,"name=%s link=%x",name,link); */
+
+ while(link)
+ {
+/*  dprintf(0,"name=%s link=%x",name,link); */
+  if(!strcmp(link->name,name)) break;
+  link=link->next;
+ }
+
+ return(link);
+}
+
+
+
+static contag * findtag(conlink * link,char * name)
+{
+ contag * tag;
+ tag=link->tags;
+ while(tag->name)
+ {
+  if(!strcmp(tag->name,name)) return(tag);
+  tag++;
+ }
+ return(NULL);
+}
+
+
+
+os_error * loadconfig(char * name)
+{
+ os_error * err;
+ conlink  * link;
+ contag   * tag;
+ buffer     bf;
+ char       string[256];
+ int        eof;
+ int        len;
+ char    *  p;
+
+
+
+/* dprintf(0,"load config"); */
+
+ lasttag=NULL;
+
+
+ err=bf_open(name,'r',DEFBUFFSIZE,&bf);
+ if(!err)
+ {
+  eof=0;
+
+  while(!eof)
+  {
+   err=bf_getstring(&bf,string,sizeof(string),&eof);
+   if(err) break;
+
+   p=gettok(string,&len);
+   if(len)
+   {
+    if(strcmp(p,"//"))
+    {
+    /* dprintf(0,"findlink a string=%s",string);
+     dprintf(1,"findlink b string=%s",p); */
+
+     link=findlink(p);
+     if(link)
+     {
+      p=gettok(p+len,&len);
+      if(len)
+      {
+       tag=findtag(link,p);
+       if(tag) err=gettag(link,tag,p+len);
+      }
+     }
+    }
+   }
+  }
+  err=bf_close(&bf,err);
+ }
+ return(err);
+}
+
+
+
+os_error * initcon(void)
+{
+ firstlink=NULL;
+ return(NULL);
+}
+
+

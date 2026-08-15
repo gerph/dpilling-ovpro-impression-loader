@@ -1,0 +1,353 @@
+/*->c.xhelp     */
+
+
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <stdio.h>
+#include <ctype.h>
+
+
+#include "h.os"
+#include "h.wimp"
+#include "h.wimpt"
+#include "h.werr"
+
+#include "h.flex"
+
+#include "h.err"
+#include "h.trans"
+#include "h.temp"
+#include "h.sp"
+#include "h.wos"
+#include "h.poll"
+#include "h.alloc"
+#include "h.bits"
+#include "h.fsx"
+#include "h.bf"
+
+#include "h.xhelp"
+
+
+
+/* 
+
+   Help file format
+
+   Name,icon,icon,icon,string
+
+ */
+
+
+
+
+typedef struct ticonstr
+{
+ int            icon:8;
+ int            bits:4;
+ int            offset:20;
+
+} ticonstr;
+
+
+
+typedef struct tagstr
+{
+ int tag;
+ int icon;
+} tagstr;
+
+
+
+
+#define ICONCHUNK   (sizeof(ticonstr)*32)
+#define STRINGCHUNK (512)
+#define TAGCHUNK    (sizeof(tagstr)*32)
+
+
+static int       tags;
+static tagstr  * tagptr;              /* pointers into icon structure */
+
+static int       icons;
+static ticonstr * iconptr;             /* pointers into strings */
+
+static int       hstrings;
+static char    * hstringptr;
+
+
+
+static int findtagname(char * name)
+{
+ int tag;
+
+ if(!cstrcmp(name,"IconBar")) return(ICONBARTAG);
+
+ findtempname(&tag,name);
+
+ return(tag);
+}
+
+
+static int cmptag(const void * t1,const void * t2)
+{
+ return((((tagstr*)t1)->tag)-(((tagstr*)t2)->tag));
+}
+
+
+os_error * addhelp(char * path,char * leaf)
+{
+ os_error * err;
+ char     * p;
+ char     * q;
+ char       temp[512];
+ int        tag;
+ int        n;
+ int        ch;
+ fstat      f;
+ buffer     bf;
+ int        eof;
+ char       lastname[16];
+ int        lasttag;
+ int        index;
+ tagstr   * indexp;
+ tagstr     target;
+ int        iconi;
+ int        toptag;
+ int        i;
+
+
+ err=NULL;
+
+ if(!iconptr)     err=flex_alloc((flex_ptr)&iconptr,ICONCHUNK);
+ if(!err)
+ {
+  if(!hstringptr) err=flex_alloc((flex_ptr)&hstringptr,STRINGCHUNK);
+  if(!err)
+  {
+   if(!tagptr)    err=flex_alloc((flex_ptr)&tagptr,TAGCHUNK);
+  }
+ }
+
+
+ strcpy(temp,path);
+ strcat(temp,".");
+ strcat(temp,leaf);
+
+ lastname[0]=0;
+ lasttag=0;
+ toptag=0;
+ index=0;   /* compiler */
+
+
+ if(!err) err=fs_stat(temp,&f);
+ if(!err && f.object)
+ {
+  err=bf_open(temp,'r',DEFBUFFSIZE,&bf);
+  if(!err)
+  {
+   while(1)
+   {
+    err=bf_getstring(&bf,temp,sizeof(temp),&eof);
+    if(err) break;
+    if(eof) break;
+
+    p=temp;
+    while(*p==' ') p++;
+    if((*p)=='/' || (*p)<' ') continue;               /* !!!!!!! */
+
+    q=p;
+
+    while(*p>=' ' && *p++!=',');
+    *(p-1)=0;
+
+    /* map string to tag */
+
+    if(!cstrcmp(q,lastname)) tag=lasttag;
+    else                    
+    {
+     tag=findtagname(q);
+     strcpy(lastname,q);
+     lasttag=tag;
+    }
+
+
+    if(tag>0)
+    {
+     if(tag==toptag)
+     {
+      iconi=icons;
+      iconptr[iconi-1].bits&=~0x1;
+     }
+     else
+     {
+      target.tag=tag;
+      indexp=bnearest(&target,tagptr,tags,sizeof(tagstr),cmptag);
+      index=indexp-tagptr;
+
+      if(index<tags && indexp->tag==tag)
+      {
+       iconi=tagptr[index].icon;
+       while(!(iconptr[iconi].bits&0x1)) iconi++;
+       iconptr[iconi++].bits&=~0x1;
+      }
+      else
+      {
+       err=flex_chunk((flex_ptr)&tagptr,(tags+1)*sizeof(tagstr),TAGCHUNK);
+       memcpy(tagptr+index+1,tagptr+index,sizeof(tagstr)*(tags-index));
+       tagptr[index].icon=iconi=icons;
+       tagptr[index].tag=tag;
+       toptag=tag;
+       tags++;
+      }
+     }
+
+
+     while(1)
+     {
+      n=0;                                                                            while((ch=*p++)!=0)
+      {
+       if(ch==',' || ch==':') break;
+       else 
+       if(isdigit(ch)) n=n*10+(ch-'0');
+      }
+
+      err=flex_chunk((flex_ptr)&iconptr,(icons+1)*sizeof(ticonstr),ICONCHUNK);
+      if(err) break;
+
+      if(iconi!=icons)
+      {
+       memcpy(iconptr+iconi+1,iconptr+iconi,(icons-iconi)*sizeof(ticonstr));
+     /*  for(i=index+1;i<tags;i++) tagptr[i].icon++;  */
+       for(i=0;i<tags;i++) 
+       {
+        if(tagptr[i].icon>=iconi) tagptr[i].icon++;
+       }
+      }
+
+      iconptr[iconi].icon=n;
+      iconptr[iconi].offset=hstrings;
+      iconptr[iconi].bits=0;
+
+      icons++;
+
+      if(ch!=',')
+      {
+       iconptr[iconi].bits|=0x1;
+       break;
+      }
+
+      iconi++;
+     }
+
+     if(err) break;
+     if(ch!=':') break;
+
+     q=p;
+     while(*p++>=' ');
+     *(p-1)=0;
+
+     err=flex_chunk((flex_ptr)&hstringptr,(hstrings+p-q),STRINGCHUNK);
+     if(err) break;
+
+     strcpy(hstringptr+hstrings,q);
+
+     hstrings+=p-q;
+    }
+   }
+
+   err=bf_close(&bf,err);
+
+   if(!err)
+   {
+    if(tagptr)     flex_extend((flex_ptr)&tagptr,tags*sizeof(tagstr));
+    if(iconptr)    flex_extend((flex_ptr)&iconptr,icons*sizeof(ticonstr));
+    if(hstringptr) flex_extend((flex_ptr)&hstringptr,hstrings);
+   }
+  }
+ }
+
+ return(err);
+}
+
+
+char * helpfindtagstring(int tag,int icon)
+{
+ ticonstr * iconp;
+ tagstr   * indexp;
+ tagstr     target;
+
+ target.tag=tag;
+
+ indexp=bsearch(&target,tagptr,tags,sizeof(tagstr),cmptag);
+
+ if(indexp)
+ {
+  iconp=iconptr+indexp->icon;
+
+  while(1)
+  {
+   if(iconp->icon==icon || (iconp->icon==255 && icon==-1) || iconp->icon==254)
+   {
+    return(hstringptr+iconp->offset);
+   }
+  
+   if(iconp->bits & 0x1) break;
+   iconp++;
+  }
+ }
+ 
+ return(NULL);
+}
+
+
+/*****************************************************************************/
+
+#ifdef NEVER
+
+static int findmenu(int handle,int icon,int * entry)
+{
+ os_regset rx;
+ int       buffer[16];
+ int     * menu;
+ int       i;
+ int       index;
+
+ rx.r[0]=1;
+ rx.r[1]=(int)buffer;
+ rx.r[2]=handle;
+ rx.r[3]=icon;
+
+ if(!os_swix(Wimp_GetMenuState,&rx) && buffer[0]>=0 && lastmenu)
+ {
+  menu=lastmenu;
+  i=0;
+  index=0;  /* compiler */
+
+  while(1)
+  {
+   index=buffer[i++];
+   if(buffer[i]==-1) break;
+
+   menu=(int*)(*(menu+(7+1+6*index)));
+   if(!menu) break;
+  }
+
+  if(menu)
+  {
+   for(i=0;i<MSIZE;i++)
+   {
+    if(menus[i]==menu)
+    {
+     *entry=index;
+     return(i);
+    }
+   }
+  }
+ }
+
+ return(-1);
+}
+
+#endif
+
+

@@ -1,0 +1,15 @@
+/*->h.allocalias */
+
+
+extern char * aa_calloc(size_t /*nmemb*/, size_t /*size*/);
+extern void   aa_free(void * /*ptr*/);
+extern char * aa_malloc(size_t /*size*/);
+extern char * aa_realloc(void * /*ptr*/, size_t /*size*/);
+
+
+#define calloc(a,b)  aa_calloc(a,b)
+#define free(a)      aa_free(a)
+#define malloc(a)    aa_malloc(a)
+#define realloc(a,b) aa_realloc(a,b)
+
+

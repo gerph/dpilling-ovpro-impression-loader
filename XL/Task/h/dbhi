@@ -1,0 +1,235 @@
+/*->h.dbhi */
+
+
+#define DBGREYED    0x1
+#define DBNOWRITE   0x2
+#define DBNOOFF     0x4
+#define DBNONO      0x8
+#define DBALPHATX   0x10
+#define DBUSERETURN 0x20
+
+
+
+#define DBTOGGLE  0x1
+#define DBRADIO   0x2
+#define DBWRITE   0x3
+#define DBACTION  0x4
+#define DBINC     0x5
+#define DBDEC     0x6
+#define DBSLIDER  0x7
+#define DBUPDATE  0x8
+#define DBTEXT    0x9
+#define DBTRI     0x10
+#define DBRADIO2  0x11
+#define DBSLIDER2 0x12
+#define DBECHO    0x13
+#define DBRADIO3  0x14
+#define DBTRACK   0x15
+#define DBTRACKHDR 0x16
+#define DBTRI2    0x17
+#define DBWRITENC 0x18
+
+
+
+
+#define DBOK     0x1
+#define DBCANCEL 0x2
+#define DBAPPLY  0x3
+#define DBSMASH  0x4
+#define DBCHANGE 0x5
+
+
+#define DBFIX    0x1
+#define DBPANE   0x2
+#define DBMENU   0x3
+
+
+/* global flags for dboxes */
+
+#define DBGRAB       0x1   /* put caret in this dbox even if no icons */
+#define DBFORWARD    0x2   /* bring forward if opened twice           */
+#define DBCARETRESET 0x4   /* don't move caret when closed            */
+
+
+
+typedef os_error * (*dbclosefn)(int code);
+typedef os_error * (*dbwritefn)(int value,char * string);
+typedef os_error * (*dbreadfn)(int * value,char * string);
+typedef os_error * (*dbupdatefn)(void);
+typedef int        (*dbsliderfn)(int value);
+typedef int        (*dbsnapfn)(int value,int step);
+
+
+typedef struct dbiconstr
+{
+ int   icon;    /* icon number                                            */
+ int * value;   /* where to put the final value                           */
+ int   type;    /* toggle/radio/writeable/action                          */
+ int   group;   /* allows groups to be specified for commands like active */
+ int   flags;   /* active? etc.                                           */
+
+ union
+ {
+
+  struct
+  {
+   int       right;         /* order for caret */
+   int       left;
+   int       down;
+   int       up;
+   dbreadfn  readfn;    /* input fn  */
+   dbwritefn writefn;   /* output fn */
+
+  } writeable;
+
+  struct
+  {
+   int     mask;
+   int     key;               /* key press */
+   int     x;
+   int     y;
+   clickfn iconfn;            /* iconfn    */
+
+  } toggle;
+
+  struct
+  {
+   int     mask;
+   int     key;               /* key press */
+   int     x;
+   int     y;
+   clickfn iconfn;            /* iconfn    */
+
+  } tristate;
+
+  struct
+  {
+   int mask;                  /* value to put in *value when selected */
+   int key;                   /* key press */
+   int rank;                  /* esg       */
+   int y;
+   clickfn iconfn;            /* iconfn    */
+
+  } radio;
+
+  struct
+  {
+   int action; /* OK/CANCEL etc. */
+   int key;
+   int x;
+   int y;
+   clickfn iconfn;            /* iconfn    */
+
+  } action;
+
+  struct
+  {
+   int      step;
+   int      key;
+   int      max;
+   int      min;
+   clickfn  iconfn;            /* iconfn    */
+   dbsnapfn snapfn;
+
+  } stepbutton;
+
+  struct
+  {
+   int        link;
+   int        y;
+   int        max;
+   int        min;
+   int        hdr;
+   dbsliderfn slider;
+  } slider;
+
+
+  struct
+  {
+   int x;
+   int y;
+   int z;
+   int a;
+   dbupdatefn updatefn;
+
+  } update;
+
+
+  struct
+  {
+   int n;
+
+
+
+  } echo;
+
+
+ } data;
+} dbiconstr;
+
+
+
+typedef struct dboxstr
+{
+ int         handle;
+ int         template;
+ int         type;
+ int         flags;
+ dbclosefn   close;      /* close (ok/cancel/apply)   */
+ clickfn     click;      /* iconfn                    */
+ keyfn       keypress;   /* keyfn                     */
+ redrfn      redraw;     /* redraw                    */
+
+ dbiconstr * dbicon;     /* array of icon data */
+
+ int         x0;         /* original coords */
+ int         y1;
+
+ int         size;
+
+ void      * dbstack;
+ helpfn      help;
+ int         z;
+
+} dboxstr;
+
+
+extern os_error * dodbox(dboxstr * dbox,int size);
+extern os_error * dbchangevalue(int * value,dboxstr * dbox);
+extern os_error * dbchangepane(dboxstr * old,dboxstr * new,dboxstr * dbparent);
+extern os_error * dbreadvalues(dboxstr * dboxp);
+extern os_error * dbwritevalues(dboxstr * dboxp);
+extern os_error * dbclose(dboxstr * dboxp,int code);
+extern os_error * dbclear(dboxstr * dboxp);
+extern os_error * dbchangewindow(dboxstr * old,dboxstr * new,int size);
+extern os_error * dboxforward(dboxstr * dbox);
+
+
+#define DBSHADEG 0x1
+#define DBWRITEG 0x2
+#define DBNONOG  0x4
+#define DBNOOFFG 0x8
+
+extern os_error * dbshade(int group,int shade,dboxstr * dbparent);
+extern os_error * dbsetflagbits(int group,int bits,int mask,
+                                              dboxstr * dbparent);
+
+
+#define DBSTACK 8
+
+typedef struct dbstackstr
+{
+ wimp_caretstr   caret[DBSTACK];
+ dboxstr       * dbox[DBSTACK];
+ int             dsp;
+
+} dbstackstr;
+
+
+extern os_error * dodboxsp(dboxstr * dbox,int size,
+                           dboxstr * parent,dbstackstr * dsp);
+
+extern os_error * dbstacksmash(dbstackstr * dbstack);
+
+
+

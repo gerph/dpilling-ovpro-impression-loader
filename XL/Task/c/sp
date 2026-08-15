@@ -1,0 +1,224 @@
+/*->c.sp */
+
+
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <stdio.h>
+
+
+#include "h.os"
+
+
+#include "h.flex"
+#include "h.alloc"
+#include "h.sprite"
+#include "h.wimpt"
+#include "h.wimp"
+
+
+#include "h.fsx"
+#include "h.bf"
+#include "h.wos"
+#include "h.task"
+
+#include "h.sp"
+
+
+#define SPSIZE 0x100
+
+
+char * sprites;
+
+
+
+/* merge in a new template file */
+
+static os_error * addspritess(char * path,char * leaf,sprite_area ** sprites)
+{
+ os_error  *   err;
+ char          name[256];
+ fstat         f;
+ int           free;
+ int           newsize;
+ sprite_area * area;
+
+ strcpy(name,path);
+ strcat(name,".");
+ strcat(name,leaf);
+
+ err=fs_stat(name,&f);
+ if(!err && f.object)
+ {
+  area=*sprites;
+
+  free=area->size-area->freeoff;
+  if(f.length>free)
+  {
+   newsize=area->freeoff+f.length+SPSIZE;
+
+/*   dprintf(0,"sp1"); */
+   err=flex_extend((flex_ptr)sprites,newsize);
+/*   dprintf(0,"sp2"); */
+
+   if(!err) (*sprites)->size=newsize;
+
+/*   dprintf(0,"sp3"); */
+  }
+
+/*  dprintf(0,"sp4 %x %s",*sprites,name); */
+
+  if(!err) err=sprite_area_merge(*sprites,name);
+ }
+
+/* dprintf(0,"sp5");  */
+
+ return(err);
+}
+
+
+
+os_error * addspritesxs(char * path,char * leaf,sprite_area ** sprites)
+{
+ os_error * err;
+ char       temp[128];
+
+ strcpy(temp,leaf);
+ strcat(temp,"22");
+
+ if((cvdu.deltax<=2 && cvdu.deltay<=2 && resexists(path,temp)) ||
+                                        !resexists(path,leaf))
+ {
+  err=addspritess(path,temp,sprites);
+ }
+ else
+ {
+  err=addspritess(path,leaf,sprites);
+ }
+
+/* dprintf(0,"sp6"); */
+
+ return(err);
+}
+
+
+
+os_error * addspritesx(char * path,char * leaf)
+{
+ return(addspritesxs(path,leaf,(sprite_area**)&sprites));
+}
+
+
+
+
+
+
+os_error * initspritess(sprite_area ** sprites)
+{
+ os_error * err;
+
+ err=flex_alloc((flex_ptr)sprites,SPSIZE);
+ if(!err)
+ {
+  sprite_area_initialise(*sprites,SPSIZE);
+ }
+
+ return(err); 
+}
+
+
+
+os_error * initsprites(void)
+{
+ return(initspritess((sprite_area**)&sprites));
+}
+
+
+
+
+os_error * loadspritearea(char * path,char * leaf,sprite_area ** areap,
+                                                                 int flex)
+{
+ os_error  *   err;
+ fstat         f;
+ sprite_area * area;
+ char          name[256];
+
+ strcpy(name,path);
+ strcat(name,".");
+ strcat(name,leaf);
+
+ err=fs_stat(name,&f);
+ if(!err && f.object)
+ {
+  if(flex) err=flex_alloc((flex_ptr)areap,f.length+SPSIZE);
+  else     err=salloc((flex_ptr)areap,f.length+SPSIZE);
+  if(!err)
+  {
+   area=*areap;
+   sprite_area_initialise(area,f.length+SPSIZE);
+   err=sprite_area_merge(area,name);
+  }
+ }
+ return(err);
+}
+
+
+
+
+int * spfind(sprite_area * areap,char * name)
+{
+ int * p;
+ int * q;
+ int   last;
+ int   offset;
+
+ offset=areap->sproff;      /* offset to first sprite */
+ last=areap->freeoff;
+
+ p=(int*)areap;
+ q=p+(last/sizeof(int));
+
+ while(1)
+ {
+  p+=(offset/sizeof(int));  /* point to first sprite */
+  if(p>=q) break;
+
+  offset=*p;
+
+  if(!strncmp((char*)(p+1),name,12))
+  {
+   return(p);
+  }
+ }
+
+ return(NULL);
+}
+
+
+
+
+
+os_error * spsave(sprite_header * sph,char * name)
+{
+ os_error * err;
+ buffer     bf;
+
+ err=bf_open(name,'w',DEFBUFFSIZE,&bf);
+ if(!err)
+ {
+  bf_puti(&bf,1);  /* no sprites */
+  bf_puti(&bf,16);  /* first offset */
+  bf_puti(&bf,sizeof(sprite_header)+sph->next+16); /* next sprite */
+  bf_write(&bf,sph,sizeof(sprite_header)+sph->next);
+
+  err=bf_closec(&bf,err,name,0xFF9);
+ }
+
+ return(err);
+}
+
+
+
+
+

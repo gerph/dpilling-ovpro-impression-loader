@@ -1,0 +1,9 @@
+/*->h.alloc */
+
+extern os_error * initalloc(void);
+extern os_error * sfree(void ** mem);
+extern os_error * ralloc(void ** mem,int nbytes);
+extern os_error * salloc(void ** mem,int nbytes);
+extern os_error * srealloc(void ** handle,int nbytes);
+extern os_error * schunk(void ** handle,int size,int chunksize);
+

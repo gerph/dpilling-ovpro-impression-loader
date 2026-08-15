@@ -1,0 +1,20 @@
+/*->h.csv */
+
+#define CSV 0xDFE
+
+
+typedef struct csvstr
+{
+ int    records;
+ char * record[1];
+
+} csvstr;
+
+
+extern os_error * csvputrecord(buffer * bf,csvstr * csv);
+extern os_error * csvgetrecord(buffer * bf,csvstr ** csv);
+extern os_error * csvgetrecordn(int record,buffer * csvbf,csvstr ** csv);
+extern os_error * csvclose(buffer * bf,os_error * err);
+extern os_error * csvclosec(buffer * bf,os_error * err,char * name);
+extern os_error * csvopen(char * name,buffer * bf,int mode);
+

@@ -1,0 +1,240 @@
+/*->c.appletrun */
+
+
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <stdio.h>
+
+
+#include "h.os"
+#include "h.wimp"
+#include "h.wimpt"
+#include "h.werr"
+
+#include "h.flex"
+
+#include "h.err"
+#include "h.trans"
+#include "h.temp"
+#include "h.sp"
+#include "h.wos"
+#include "h.poll"
+#include "h.alloc"
+#include "h.bits"
+#include "h.etc"
+#include "h.fsx"
+#include "h.scall"
+#include "h.xhelp"
+
+#include "h.xext"
+
+
+#include "h.applet"
+
+
+
+
+
+
+
+
+/* called by main program just before poll() loop */
+
+os_error * appletrun(void)
+{
+ os_error * err;
+ fxstat     f;
+ int        eof;
+ char       string[256];
+ int        len;
+ int        dirposn;
+ int        ack;
+ char     * p;
+
+
+ err=NULL;
+
+ if((p=appspath)!=NULL)
+ {
+  while(*p)
+  {
+   sprintf(string,"Set %s$AppletsDir %s",wimpt_programname(),p);
+   os_cli(string);
+
+   fs_startscan();
+
+   while(1)
+   {
+    err=fs_nextitem(p,&f,NULL,&eof);
+    if(err) break;
+    if(eof) break;
+
+    fs_savescan(&dirposn);
+
+    if(f.f.object>1)
+    {
+     len=strlen(f.name);
+     if(len && f.name[len-1]!='-')
+     {
+      sprintf(string,"%s.%s.!ARun",p,f.name);
+      fs_stat(string,&f.f);
+      if(f.f.object)
+      {
+       if(f.f.length)
+       {
+        sprintf(string,"WimpTask Run %s.%s.!ARun",p,f.name);
+        os_cli(string);
+       }
+      }
+      else
+      {
+       sprintf(string,"%s.%s.!Run",p,f.name);
+       fs_stat(string,&f.f);
+       if(f.f.object)
+       {
+        sprintf(string,"WimpTask Run %s.%s.!Run",p,f.name);
+        os_cli(string);
+       }
+      }
+
+      sprintf(string,"%s.%s.Library",p,f.name);
+      addfiles(string,0);     /* do library */
+
+      sprintf(string,"%s.%s.AutoRun",p,f.name);
+      addfiles(string,1);     /* auto run */ 
+     }
+    }
+    else
+    {
+     sprintf(string,"%s.%s",p,f.name);
+     fakedataopen(f.f.type,string,&ack);
+     if(!ack)
+     {
+      sprintf(string,"WimpTask Run %s.%s",p,f.name);
+      os_cli(string);
+     }
+    }
+
+    fs_loadscan(dirposn);
+   }
+
+   if(err) break;
+   p+=strlen(p)+1;
+  }
+ }
+
+ return(err);
+}
+
+
+
+
+
+os_error * appletscan(ascanfn ascan)
+{
+ os_error * err;
+ fxstat     f;
+ int        eof;
+ char       string[256];
+ int        len;
+ char     * p;
+
+
+ err=NULL;
+
+ if((p=appspath)!=NULL)
+ {
+  while(*p)
+  {
+   sprintf(string,"Set %s$AppletsDir %s",wimpt_programname(),p);
+   os_cli(string);
+
+   fs_startscan();
+
+   while(1)
+   {
+    err=fs_nextitem(p,&f,NULL,&eof);
+    if(err) break;
+    if(eof) break;
+
+    if(f.f.object>1)
+    {
+     len=strlen(f.name);
+     if(len && f.name[len-1]!='-')
+     {
+      sprintf(string,"%s.%s.AResources",p,f.name);
+      fs_stat(string,&f.f);
+      if(f.f.object)
+      {
+       err=ascan(string);
+      }
+     }
+    }
+   }
+   if(err) break;
+   p+=strlen(p)+1;
+  }
+ }
+
+ return(err);
+}
+
+
+
+
+static os_error * asprites(char * string)
+{
+ return(addspritesx(string,"Sprites"));
+}
+
+
+os_error * appletsprites(void)
+{
+ return(appletscan(asprites));
+}
+
+
+
+static os_error * atemps(char * string)
+{
+ os_error * err;
+ err=addtemplates(string,"Templates",NULL,NULL);
+ if(err && err->errnum==ETEMPF) return(NULL);
+ else                           return(err);
+}
+
+
+os_error * applettemplates(void)
+{
+ return(appletscan(atemps));
+}
+
+
+static os_error * amess(char * string)
+{
+ os_error * err;
+ err=addtranstable(string,"Messages");
+ if(err && err->errnum==ENOTF) return(NULL);
+ else                          return(err);
+}
+
+
+os_error * appletmessages(void)
+{
+ return(appletscan(amess));
+}
+
+
+static os_error * ahelp(char * string)
+{
+ return(addhelp(string,"Help"));
+}
+
+
+os_error * applethelp(void)
+{
+ return(appletscan(ahelp));
+}
+
+

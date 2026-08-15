@@ -1,0 +1,479 @@
+/*->c.transform */
+
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <stdio.h>
+#include <locale.h>
+#include <math.h>
+
+#include "h.os"
+#include "h.wimp"
+#include "h.wimpt"
+#include "h.werr"
+#include "h.wos"
+#include "h.flex"
+#include "h.bbc"
+
+#include "h.etc"
+#include "h.xmath"
+
+#include "h.transform"
+
+
+/*
+void tr_debug(transformstr * t,char * string,int n)
+{
+ dprintf(n,"%s a=%d b=%d c=%d d=%d e=%d f=%d",string,
+               t->a,t->b,t->c,t->d,t->e,t->f);
+}
+*/
+
+
+
+static transformstr tr_identity=
+{
+ 0x10000,
+ 0,
+ 0,
+ 0x10000,
+ 0,
+ 0
+};
+
+
+
+int tr_type(transformstr * t)
+{
+ int type;
+
+ type=0;
+
+ if(t->e) type|=TR_XSHIFT;
+ if(t->f) type|=TR_YSHIFT;
+
+ if(t->b || t->c || t->a<0 || t->d<0) type|=TR_ROTATE;
+
+ if(t->a!=0x10000) type|=TR_XSCALE;
+ if(t->d!=0x10000) type|=TR_YSCALE;
+
+ if(!t->a)
+ {
+  if(t->b<0) type|=TR_MINUS90;
+  else       type|=TR_PLUS90;
+ }
+ else
+ if(!t->b)
+ {
+  if(t->a<0) type|=TR_PLUS180;
+ }
+
+ return(type);
+}
+
+
+
+void tr_setidentity(transformstr * t)
+{
+ *t=tr_identity;
+}
+
+
+
+void tr_setnull(transformstr * t)
+{
+ memset(t,0,sizeof(transformstr));
+}
+
+
+
+void tr_setrotationd(transformstr * t,int xshift,int yshift,int offset) 
+{
+ double angle;
+
+ if(!xshift && !yshift) angle=0.0;
+ else
+ if(!xshift)
+ {
+  if(yshift>0) angle=PI/2;
+  else         angle=-PI/2;
+ }
+ else  angle=atan2((double)yshift,(double)xshift);
+
+ angle-=offset;
+
+ t->a=t->d=(int)(((double)0x10000)*cos(angle));
+ t->b=(int)(((double)0x10000)*sin(angle));
+ t->c=-t->b;
+}
+
+
+void tr_setrotation(transformstr * t,int xshift,int yshift)
+{
+ tr_setrotationd(t,xshift,yshift,0);
+}
+
+
+
+
+
+void tr_setrotationa(transformstr * t,int a)
+{
+ double angle;
+
+ angle=((double)a/(double)0x10000);
+ angle/=180.0;
+ angle*=PI;
+
+ t->a=t->d=(int)(((double)0x10000)*cos(angle));
+ t->b=(int)(((double)0x10000)*sin(angle));
+ t->c=-t->b;
+}
+
+
+void tr_setskew(transformstr * t,int a)
+{
+ t->c=tr_tan(a,0x10000);
+}
+
+
+void tr_setscale(transformstr * t,int oldx,int newx,int oldy,int newy)
+{
+ tr_setidentity(t);
+ t->c=t->b=0;
+
+ if(oldx==newx) t->a=0x10000;
+ else
+ if(oldx) t->a=scale(newx,0x10000,oldx);
+ else     t->a=0x10000;
+
+ if(oldy==newy) t->d=0x10000;
+ else
+ if(oldy) t->d=scale(0x10000,newy,oldy);
+ else     t->d=0x10000;
+}
+
+
+
+void tr_setshift(transformstr * t,int dx,int dy)
+{
+ tr_setidentity(t);
+ t->e=dx;
+ t->f=dy;
+}
+
+
+void tr_addscale(transformstr * t,int oldx,int newx,int oldy,int newy)
+{
+ t->c=t->b=0;
+
+ if(oldx) t->a=scale(newx,0x10000,oldx);
+ else     t->a=0x10000;
+
+ if(oldy) t->d=scale(0x10000,newy,oldy);
+ else     t->d=0x10000;
+}
+
+
+
+#define tumul ttmul
+
+
+
+int tr_transformset(coordstr * coord,int n,transformstr * t)
+{
+ int i;
+ int tempx;
+ int tempy;
+
+ for(i=0;i<n;i++)
+ {
+  tempx=tumul(t->a,coord[i].x)+tumul(t->c,coord[i].y)+t->e;
+
+  tempy=tumul(t->b,coord[i].x)+tumul(t->d,coord[i].y)+t->f;
+  coord[i].x=tempx;
+  coord[i].y=tempy;
+ }
+ return(TR_GENERAL);
+}
+
+
+
+int tr_inverseset(coordstr * coord,int n,transformstr * t)
+{
+ int i;
+ int den;
+ int x;
+ int y;
+
+ den=ttmul(t->a,t->d);
+ den-=ttmul(t->c,t->b);
+
+ for(i=0;i<n;i++)
+ {
+  x=coord[i].x-t->e;
+  y=coord[i].y-t->f;
+
+  coord[i].x=scale(x,t->d,den)-scale(y,t->c,den);
+  coord[i].y=scale(y,t->a,den)-scale(x,t->b,den);
+ }
+ return(TR_SHIFT);
+}
+
+
+
+void tr_inverse(transformstr * t,transformstr * i)
+{
+ int den;
+
+ den=ttmul(t->a,t->d)-ttmul(t->c,t->b);
+
+ i->a=scale(0x10000,t->d,den);
+ i->c=-scale(0x10000,t->c,den);
+ i->b=-scale(0x10000,t->b,den);
+ i->d=scale(0x10000,t->a,den);
+ i->e=scale(t->f,t->c,den)-scale(t->e,t->d,den);
+ i->f=scale(t->e,t->b,den)-scale(t->f,t->a,den);
+}
+
+
+/* r=t1 x t2 */
+
+void tr_multiply(transformstr * r,transformstr * t1,transformstr * t2)
+{
+ r->a=ttmul(t1->a,t2->a)+ttmul(t1->b,t2->c);
+ r->b=ttmul(t1->a,t2->b)+ttmul(t1->b,t2->d);
+ r->c=ttmul(t1->c,t2->a)+ttmul(t1->d,t2->c);
+ r->d=ttmul(t1->c,t2->b)+ttmul(t1->d,t2->d);
+ r->e=tumul(t2->a,t1->e)+tumul(t2->c,t1->f)+t2->e;
+ r->f=tumul(t2->b,t1->e)+tumul(t2->d,t1->f)+t2->f;
+}
+
+
+int tr_cmp(transformstr * t1,transformstr * t2)
+{
+ return(
+        t1->a!=t2->a ||
+        t1->b!=t2->b ||
+        t1->c!=t2->c ||
+        t1->d!=t2->d ||
+        t1->e!=t2->e ||
+        t1->f!=t2->f
+       );
+}
+
+
+/* approximate... */
+
+void tr_getscale(transformstr * tr,coordstr * scale)
+{
+ scale->x=pythag(tr->a,tr->b);
+ scale->y=pythag(tr->c,tr->d);
+}
+
+
+
+
+int tr_cos(int a,int r)
+{
+ double angle;
+
+ angle=(((double)a)/((double)0x10000));
+ angle/=180.0;
+ angle*=PI;
+
+ return((int)(cos(angle)*(double)r));
+}
+
+
+int tr_sin(int a,int r)
+{
+ double angle;
+
+ angle=(((double)a)/((double)0x10000));
+ angle/=180.0;
+ angle*=PI;
+
+ return((int)(sin(angle)*(double)r));
+}
+
+
+
+int tr_tan(int a,int r)
+{
+ double angle;
+
+ angle=(((double)a)/((double)0x10000));
+ angle/=180.0;
+ angle*=PI;
+
+ return((int)(tan(angle)*(double)r));
+}
+
+
+
+
+
+
+
+int tr_getbits(transformstr * t,transformbitstr * b)
+{
+ int type;
+ int top;
+ int bot;
+ int c;
+ int s;
+
+ b->xshift=t->e;
+ b->yshift=t->f;
+
+ b->skewyx=0;
+
+ if(!t->a)
+ {
+  if(t->b<0) 
+  {
+   b->angle=-90*0x10000;
+   s=-0x10000;
+   b->xscale=-t->b;
+  }
+  else
+  {
+   b->angle=90*0x10000;
+   s=0x10000;
+   b->xscale=t->b;
+  }
+  c=0;
+ }
+ else
+ if(!t->b)
+ {
+  if(t->a<0) 
+  {
+   b->angle=180*0x10000;
+   c=-0x10000;
+   b->xscale=-t->a;
+  }
+  else
+  {
+   b->angle=0;
+   c=0x10000;
+   b->xscale=t->a;
+  }
+  s=0;
+ }
+ else
+ {
+  b->angle=(int)((180*atan2((double)t->b,(double)t->a)/PI)*0x10000);
+
+  b->xscale=pythag(t->a,t->b);
+  c=tr_cos(b->angle,0x10000);
+  s=tr_sin(b->angle,0x10000);
+ }
+
+ top=ttmul(t->c,c)+ttmul(t->d,s);
+ bot=ttmul(t->d,c)-ttmul(t->c,s);
+
+ if(bot==0) b->skewxy=0;
+ else       b->skewxy=scale(0x10000,top,bot);
+
+ bot=ttmul(b->skewxy,c)-s;
+ top=ttmul(b->skewxy,s)+c;
+
+ if((ABS(bot))>(ABS(top))) b->yscale=scale(0x10000,t->c,bot);
+ else                      b->yscale=scale(0x10000,t->d,top);
+
+ type=0;
+
+ if(b->xshift)          type|=TR_XSHIFT;
+ if(b->yshift)          type|=TR_YSHIFT;
+ if(b->xscale!=0x10000) type|=TR_XSCALE;
+ if(b->yscale!=0x10000) type|=TR_YSCALE;
+ if(b->angle)           type|=TR_ROTATE;
+ if(b->skewxy)          type|=TR_SKEWXY;
+ if(b->skewyx)          type|=TR_SKEWYX;
+
+ return(type);
+}
+
+
+
+void tr_setbits(transformstr * t,transformbitstr * b,int bits)
+{
+ int c;
+ int s;
+ int sx;
+ int sy;
+ int sxy;
+ int syx;
+ int sxsyx;
+ int sysxy;
+
+ tr_setidentity(t);
+
+ if(bits & TR_ROTATE)
+ {
+  c=tr_cos(b->angle,0x10000);
+  s=tr_sin(b->angle,0x10000);
+ }
+ else
+ {
+  c=0x10000;
+  s=0;
+ }
+
+
+ if(bits & TR_XSCALE) sx=b->xscale;
+ else                 sx=0x10000;
+
+ if(bits & TR_YSCALE) sy=b->yscale;
+ else                 sy=0x10000;
+
+ if(bits & TR_SKEWXY) sxy=b->skewxy;
+ else                 sxy=0;
+
+ if(bits & TR_SKEWYX) syx=b->skewyx;
+ else                 syx=0;
+
+
+ sxsyx=ttmul(sx,syx);
+ sysxy=ttmul(sy,sxy);
+
+
+ t->a=ttmul(sx,c)-ttmul(sxsyx,s);
+ t->b=ttmul(sx,s)+ttmul(sxsyx,c);
+ t->c=ttmul(sysxy,c)-ttmul(sy,s);
+ t->d=ttmul(sysxy,s)+ttmul(sy,c);
+
+ if(bits & TR_XSHIFT) t->e=b->xshift;
+ if(bits & TR_YSHIFT) t->f=b->yshift;
+}
+
+
+void tr_delta(transformstr * t,int * dx,int * dy)
+{
+ int x;
+ int y;
+
+ x=*dx;
+ y=*dy;
+
+ *dx=tumul(t->a,x)+tumul(t->c,y); /* +t->e; */
+ *dy=tumul(t->b,x)+tumul(t->d,y); /* +t->f; */
+}
+
+
+
+
+void tr_setscalepoint(transformstr * t,int xscale,int yscale,int x,int y)
+{
+ t->c=t->b=0;
+
+ t->a=xscale;
+ t->d=yscale;
+
+ t->e=x-ttmul(x,xscale);
+ t->f=y-ttmul(y,yscale);
+}
+
+

@@ -1,0 +1,97 @@
+/*->c.test */
+
+
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <stdio.h>
+#include <locale.h>
+
+#include "h.os"
+#include "h.wimp"
+#include "h.wimpt"
+#include "h.werr"
+#include "h.wos"
+
+#include "h.flex"
+#include "h.conf"
+#include "h.err"
+#include "h.fsx"
+#include "h.bf"
+#include "h.etc"
+
+
+#include "h.task"
+
+#include "h.xmath"
+
+#include "h.crc"
+
+
+#define MAX 100000
+
+
+static int array[5][MAX];
+
+
+
+
+int main(int argc,char * argv[])
+{ 
+ int          i;
+ int          time;
+ int          k;
+
+ char      *  p;
+
+
+ i=abs(time);
+ i=MIN(time,k);
+ time=i+2;
+ i=abs(time);
+
+
+ p=(char*)array[5];
+
+ p+=2;
+
+ *p=1;
+
+ p=p-4;
+
+ *p=2;
+
+ p=p+2;
+
+ *p=3;
+
+
+
+ for(i=0;i<MAX;i++) array[0][i]=rand() & 0xFFFF;
+
+
+ time=clock();
+ for(i=0;i<MAX;i++) array[1][i]=fastdiv400(array[0][i]);
+ printf("fastdiv400 =%d\n\n",clock()-time);
+
+ time=clock();
+ for(i=0;i<MAX;i++) 
+ {
+  array[1][i]=scale(array[0][i],8,400);
+/*printf("v=%d scale=%d x=%d\n",array[0][i],array[1][i],(array[0][i]*8)/400);*/
+ }
+
+ printf("scale =%d\n\n",clock()-time);
+
+ time=clock();
+ for(i=0;i<MAX;i++) array[1][i]=(array[0][i]*8)/400;
+ printf("div =%d\n\n",clock()-time);
+
+ time=clock();
+ for(i=0;i<MAX;i++) array[1][i]=ttmul(array[0][i],163);
+ printf("ttmul =%d\n\n",clock()-time);
+
+
+ return(0);
+}
+

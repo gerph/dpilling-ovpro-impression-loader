@@ -1,0 +1,251 @@
+/*->c.csv */
+
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <stdio.h>
+
+
+#include "h.os"
+
+#include "h.trans"
+
+#include "h.bf"
+#include "h.err"
+#include "h.etc"
+#include "h.fsx"
+#include "h.flex"
+#include "h.alloc"
+#include "h.bits"
+
+#include "h.csv"
+
+
+#define CSVMAXLEN 1000
+#define CSVMAXREC 256
+                     /* was 32 */
+
+/****************************************************************************/
+
+
+os_error * csvputrecord(buffer * bf,csvstr * csv)
+{
+ os_error * err;
+ int        i;
+ int        len;
+
+ err=NULL;
+
+ for(i=0;i<csv->records && !err;i++)
+ {
+  if(i>0) err=bf_putc(bf,',');
+
+  len=strlen(csv->record[i]);
+  if(len)
+  {
+   if(!err) err=bf_putc(bf,'"');
+   if(!err) err=bf_write(bf,csv->record[i],strlen(csv->record[i]));
+   if(!err) err=bf_putc(bf,'"');
+  }
+ }
+ if(!err) err=bf_putc(bf,'\n');
+
+ return(err);
+}
+
+
+os_error * csvgetrecord(buffer * bf,csvstr ** csv)
+{
+ os_error * err;
+ char     * string;
+ int      * record;
+ int        inquotes;
+ int        startline;
+ int        c;
+ int        lastchar;
+ int        inrecord;
+ int        records;
+ int        len;
+ int        escape;
+ char     * p;
+ char     * q;
+ int        i;
+ int        eol;
+
+ err=NULL;
+
+ records=0;
+ len=0;
+ inquotes=0;
+ startline=0;
+ inrecord=0;
+ escape=0;
+ c=-1;
+ eol=0;
+
+ *csv=NULL;
+
+
+ err=flex_alloc((flex_ptr)&record,CSVMAXREC*sizeof(int));
+ if(!err)
+ {
+  err=flex_alloc((flex_ptr)&string,CSVMAXLEN);
+
+  if(!err)
+  {
+   while(!eol && !err)
+   {
+    if(!(records & 0x7))
+    {
+     err=flex_chunk((flex_ptr)&record,
+                              (records+8)*sizeof(int),CSVMAXREC*sizeof(int));
+     if(err) break;
+    }
+
+    if(!(len & 0x7))
+    {
+     err=flex_chunk((flex_ptr)&string,len+8,CSVMAXLEN);
+     if(err) break;
+    }
+
+    lastchar=c;
+    err=bf_getc(bf,&c);
+    if(!startline)
+    {
+     if(c==EOF) break;
+     else
+     {
+      startline=1;
+      record[records]=len;
+      records++;
+     }
+    }
+
+    switch(c)
+    {
+     case EOF:
+     case  10:
+     case  13:
+              eol=1;
+              break;
+
+     case ',':
+              if(inquotes)
+              {
+               string[len++]=c;
+               break;
+              }
+
+     case   9:
+              /* complete a record */
+              string[len++]=0;
+              record[records]=len;
+              records++;
+              inrecord=0;
+              break;
+
+     case '"':
+              if(!inrecord)
+              {
+               inrecord=1;
+               c=-1;
+              }
+
+              if(lastchar=='"' || lastchar=='\\')
+              {
+               string[len++]=c;
+               c=-1;
+              }
+              inquotes^=1;
+              break;
+
+    case '\\':
+              break;
+
+      default:
+              if(lastchar=='\\')
+              {
+               if(c=='n') c='\n';
+               else
+               if(c=='r') c='\r';
+               else
+               if(c=='t') c='\t';
+               else
+               if(c=='f') c='\f';
+               else
+               if(c=='v') c='\v';
+              }
+
+              if(!inrecord) inrecord=1;
+              string[len++]=c;
+              break;
+    }     
+   }
+
+
+   if(startline)
+   {
+    string[len++]=0;
+
+    err=salloc((flex_ptr)csv,sizeof(csvstr)+(records-1)*sizeof(int)+len);
+    if(!err)
+    {
+     (*csv)->records=records;
+     p=((char*)(*csv))+sizeof(csvstr)+(records-1)*sizeof(int);
+
+     for(i=0;i<records;i++)
+     {
+      (*csv)->record[i]=q=record[i]+p;
+      quotec(q,q);
+     }
+     memcpy(p,string,len);
+    }
+   }
+
+   flex_free((flex_ptr)&string);
+  }
+  flex_free((flex_ptr)&record);
+ }
+ return(err);
+}
+
+
+
+os_error * csvgetrecordn(int record,buffer * csvbf,csvstr ** csv)
+{
+ os_error * err;
+
+ err=bf_seek(csvbf,0);
+ if(!err)
+ {
+  while(1)
+  {
+   err=csvgetrecord(csvbf,csv);
+   if(err) break;
+   if(record--==0) break;
+   if(*csv) sfree((flex_ptr)csv);
+  }
+ }
+
+ return(err);
+}
+
+
+
+os_error * csvclose(buffer * bf,os_error * err)
+{
+ return(bf_close(bf,err));
+}
+
+os_error * csvclosec(buffer * bf,os_error * err,char * name)
+{
+ return(bf_closec(bf,err,name,CSV));
+}
+
+os_error * csvopen(char * name,buffer * bf,int mode)
+{
+ return(bf_open(name,mode,DEFBUFFSIZE,bf));
+}
+
+
+

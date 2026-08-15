@@ -1,0 +1,711 @@
+/*->c.key */
+
+
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <stdio.h>
+#include <locale.h>
+
+#include "h.os"
+#include "h.flex"
+#include "h.wimp"
+#include "h.swis"
+
+#include "h.err"
+#include "h.alloc"
+#include "h.xext"
+#include "h.wos"
+#include "h.poll"
+#include "h.mym"
+#include "h.bits"
+
+#include "h.etc"
+
+
+#include "h.key"
+
+
+
+/*****************************************************************************/
+
+#define KEYNONE -1
+
+#define MNKEYS 96
+#define KNLEN  8
+
+
+typedef struct
+{
+ char        name[KNLEN];
+ short int   code[6];
+} ktype;
+
+
+
+static ktype ktable[MNKEYS]=
+{  
+   /* name */   /* N         S         C        A        CS       AS     */
+
+   "Escape"       ,0x1b     ,0x1b     ,0x1b    ,0x1b    ,0x1b    ,0x1b    ,
+   "F1"           ,0x181    ,0x191    ,0x1a1   ,0xda1   ,0x1b1   ,0x15b1  ,
+   "F2"           ,0x182    ,0x192    ,0x1a2   ,0xda2   ,0x1b2   ,0x15b2  ,
+   "F3"           ,0x183    ,0x193    ,0x1a3   ,0xda3   ,0x1b3   ,0x15b3  ,
+   "F4"           ,0x184    ,0x194    ,0x1a4   ,0xda4   ,0x1b4   ,0x15b4  ,
+   "F5"           ,0x185    ,0x195    ,0x1a5   ,0xda5   ,0x1b5   ,0x15b5  ,
+   "F6"           ,0x186    ,0x196    ,0x1a6   ,0xda6   ,0x1b6   ,0x15b6  ,
+   "F7"           ,0x187    ,0x197    ,0x1a7   ,0xda7   ,0x1b7   ,0x15b7  ,
+   "F8"           ,0x188    ,0x198    ,0x1a8   ,0xda8   ,0x1b8   ,0x15b8  ,
+   "F9"           ,0x189    ,0x199    ,0x1a9   ,0xda9   ,0x1b9   ,0x15b9  ,
+   "F10"          ,0x1ca    ,0x1da    ,0x1ea   ,0xdea   ,0x1fa   ,0x15fa  ,
+   "F11"          ,0x1cb    ,0x1db    ,0x1eb   ,0xdeb   ,0x1fb   ,0x15fb  ,
+   "F12"          ,0x1cc    ,0x1dc    ,0x1ec   ,0xdec   ,0x1fc   ,0x15fc  ,
+   "Print"        ,0x180    ,0x190    ,0x1a0   ,0xda0   ,0x1b0   ,0x15b0  ,
+   "SLock"        ,0x1a0e   ,0xa0e    ,0x60e   ,0xe0e   ,0x120e  ,0x160e  ,
+   "Break"        ,0x1a1b   ,0xa1b    ,0x61b   ,0xe1b   ,0x121b  ,0x161b  ,
+   "`"            ,0x60     ,0x7e     ,0x60    ,0x60    ,0x107e  ,0x147e  ,
+
+   "1"            ,0x31     ,0x21     ,0x431   ,0xc31   ,0x1021  ,0x1421  ,
+   "2"            ,0x32     ,0x40     ,0x0     ,0xcc2   ,0x10c3  ,0x14c4  ,
+   "3"            ,0x33     ,0x23     ,0x433   ,0xc33   ,0x1023  ,0x1423  ,
+   "4"            ,0x34     ,0x24     ,0x434   ,0xc34   ,0x1024  ,0x1424  ,
+   "5"            ,0x35     ,0x25     ,0x435   ,0xc35   ,0x1025  ,0x1425  ,
+   "6"            ,0x36     ,0x5e     ,0x1e    ,0xc1e   ,0x101e  ,0x141e  ,
+   "7"            ,0x37     ,0x26     ,0x437   ,0xc37   ,0x1026  ,0x1426  ,
+   "8"            ,0x38     ,0x2a     ,0x438   ,0xc38   ,0x102a  ,0x142a  ,
+   "9"            ,0x39     ,0x28     ,0x439   ,0xc39   ,0x1028  ,0x1428  ,
+   "0"            ,0x30     ,0x29     ,0x430   ,0xc30   ,0x1029  ,0x1429  ,  
+
+   "-"            ,0x2d     ,0x5f     ,0x1f    ,0xc1f   ,0x101f  ,0x141f  ,
+   "="            ,0x3d     ,0x2b     ,0x43d   ,0xc3d   ,0x102b  ,0x142b  ,
+   "£"            ,0xa3     ,0xa4     ,0x1a3   ,0x1a3   ,0x1a4   ,0x1a4   ,
+   "BS"           ,0x1a08   ,0xa08    ,0x608   ,0xe08   ,0x1008  ,0x1408  ,
+   "Insert"       ,0x1cd    ,0x1dd    ,0x1ed   ,0xded   ,0x1fd   ,0x15fd  ,  
+   "Home"         ,0x1a1e   ,0xa1e    ,0x61e   ,0xe1e   ,0x121e  ,0x161e  ,  
+   "PageUp"       ,0x1b9f   ,0xb8f    ,0x7bf   ,0xfbf   ,0x13af  ,0x17af  ,
+   "NLock"        ,0x1a22   ,0xa22    ,0x622   ,0xe22   ,0x1222  ,0x1622  ,
+   "K/"           ,0x1a2f   ,0xa2f    ,0x62f   ,0xe2f   ,0x122f  ,0x162f  ,
+   "K*"           ,0x1a2a   ,0xa2a    ,0x62a   ,0xe2a   ,0x122a  ,0x162a  ,
+   "K#"           ,0x1a23   ,0xa23    ,0x623   ,0xe23   ,0x1223  ,0x1623  ,
+   "Tab"          ,0x18a    ,0x19a    ,0x1aa   ,0xdaa   ,0x1ba   ,0x15ba  ,
+   "Q"            ,0x71     ,0x51     ,0x2411  ,0x2c11  ,0x3011  ,0x3411  ,
+   "W"            ,0x77     ,0x57     ,0x2417  ,0x2c17  ,0x3017  ,0x3417  ,
+   "E"            ,0x65     ,0x45     ,0x2405  ,0x2c05  ,0x3005  ,0x3405  ,
+   "R"            ,0x72     ,0x52     ,0x2412  ,0x2c12  ,0x3012  ,0x3412  ,
+   "T"            ,0x74     ,0x54     ,0x2414  ,0x2c14  ,0x3014  ,0x3414  ,
+   "Y"            ,0x79     ,0x59     ,0x2419  ,0x2c19  ,0x3019  ,0x3419  ,
+   "U"            ,0x75     ,0x55     ,0x2415  ,0x2c15  ,0x3015  ,0x3415  ,
+   "I"            ,0x69     ,0x49     ,0x2409  ,0x2c09  ,0x3009  ,0x3409  ,
+   "O"            ,0x6f     ,0x4f     ,0x240f  ,0x2c0f  ,0x300f  ,0x340f  ,
+   "P"            ,0x70     ,0x50     ,0x2410  ,0x2c10  ,0x3010  ,0x3410  ,
+   "["            ,0x5b     ,0x7b     ,0x241b  ,0x2c1b  ,0x301b  ,0x341b  , 
+   "]"            ,0x5d     ,0x7d     ,0x41d   ,0xc1d   ,0x101d  ,0x141d  ,
+   "\\"           ,0x5c     ,0x7c     ,0x1c    ,0xc1c   ,0x101c  ,0x141c  , 
+   "Delete"       ,0x7f     ,0x87f    ,0x47f   ,0xc7f   ,0x107f  ,0x147f  ,
+   "Copy"         ,0x18b    ,0x19b    ,0x1ab   ,0xdab   ,0x1bb   ,0x15bb  ,
+   "PageDown"     ,0x1b9e   ,0xb8e    ,0x7be   ,0xfbe   ,0x13ae  ,0x17ae  ,
+   "K7"           ,0x1a37   ,0xa37    ,0x637   ,0xe37   ,0x1237  ,0x1637  ,
+   "K8"           ,0x1a38   ,0xa38    ,0x638   ,0xe38   ,0x1238  ,0x1638  ,
+   "K9"           ,0x1a39   ,0xa39    ,0x639   ,0xe39   ,0x1239  ,0x1639  ,
+   "K-"           ,0x1a2d   ,0xa2d    ,0x62d   ,0xe2d   ,0x122d  ,0x162d  ,
+   "A"            ,0x61     ,0x41     ,0x2401  ,0x2c01  ,0x3001  ,0x3401  ,
+   "S"            ,0x73     ,0x53     ,0x2413  ,0x2c13  ,0x3013  ,0x3413  ,
+   "D"            ,0x64     ,0x44     ,0x2404  ,0x2c04  ,0x3004  ,0x3404  ,
+   "F"            ,0x66     ,0x46     ,0x2406  ,0x2c06  ,0x3006  ,0x3406  ,
+   "G"            ,0x67     ,0x47     ,0x2407  ,0x2c07  ,0x3007  ,0x3407  ,  
+   "H"            ,0x68     ,0x48     ,0x2408  ,0x2c08  ,0x3008  ,0x3408  ,
+   "J"            ,0x6a     ,0x4a     ,0x240a  ,0x2c0a  ,0x300a  ,0x340a  ,
+   "K"            ,0x6b     ,0x4b     ,0x240b  ,0x2c0b  ,0x300b  ,0x340b  ,
+   "L"            ,0x6c     ,0x4c     ,0x240c  ,0x2c0c  ,0x300c  ,0x340c  , 
+   ";"            ,0x3b     ,0x3a     ,0x43b   ,0xc3b   ,0x103a  ,0x143a  ,
+
+#ifdef NEVER
+   "\""           ,0x27     ,0x22     ,0x427   ,0xc27   ,0x1022  ,0x1422  ,
+#endif
+
+   "'"            ,0x27     ,0x22     ,0x427   ,0xc27   ,0x1022  ,0x1422  ,
+
+   "Return"       ,0xd      ,0x80d    ,0x40d   ,0xc0d   ,0x100d  ,0x140d  ,
+   "K4"           ,0x1a34   ,0xa34    ,0x634   ,0xe34   ,0x1234  ,0x1634  ,
+   "K5"           ,0x1a35   ,0xa35    ,0x635   ,0xe35   ,0x1235  ,0x1635  ,
+   "K6"           ,0x1a36   ,0xa36    ,0x636   ,0xe36   ,0x1236  ,0x1636  ,
+   "K+"           ,0x1a2b   ,0xa2b    ,0x62b   ,0xe2b   ,0x122b  ,0x162b  ,
+   "Z"            ,0x7a     ,0x5a     ,0x241a  ,0x2c1a  ,0x301a  ,0x341a  ,
+   "X"            ,0x78     ,0x58     ,0x2418  ,0x2c18  ,0x3018  ,0x3418  ,
+   "C"            ,0x63     ,0x43     ,0x2403  ,0x2c03  ,0x3003  ,0x3403  ,
+   "V"            ,0x76     ,0x56     ,0x2416  ,0x2c16  ,0x3016  ,0x3416  ,
+   "B"            ,0x62     ,0x42     ,0x2402  ,0x2c02  ,0x3002  ,0x3402  ,
+   "N"            ,0x6e     ,0x4e     ,0x240e  ,0x2c0e  ,0x300e  ,0x340e  ,
+   "M"            ,0x6d     ,0x4d     ,0x240d  ,0x2c0d  ,0x300d  ,0x340d  ,
+   ","            ,0x2c     ,0x3c     ,0x42c   ,0xc2c   ,0x103c  ,0x143c  ,
+   "."            ,0x2e     ,0x3e     ,0x42e   ,0xc2e   ,0x103e  ,0x143e  ,
+   "/"            ,0x2f     ,0x3f     ,0x42f   ,0xc2f   ,0x103f  ,0x143f  ,
+   "CUp"          ,0x18f    ,0x19f    ,0x1af   ,0xdaf   ,0x1bf   ,0x15bf  ,
+   "K1"           ,0x1a31   ,0xa31    ,0x631   ,0xe31   ,0x1231  ,0x1231  ,
+   "K2"           ,0x1a32   ,0xa32    ,0x632   ,0xe32   ,0x1232  ,0x1632  ,
+   "K3"           ,0x1a33   ,0xa33    ,0x633   ,0xe33   ,0x1233  ,0x1633  ,
+   "Space"        ,0x20     ,0x20     ,0x20    ,0x20    ,0x20    ,0x20    ,
+   "CLeft"        ,0x18c    ,0x19c    ,0x1ac   ,0xdac   ,0x1bc   ,0x15bc  ,
+   "CDown"        ,0x18e    ,0x19e    ,0x1ae   ,0xdae   ,0x1be   ,0x15be  ,
+   "CRight"       ,0x18d    ,0x19d    ,0x1ad   ,0xdad   ,0x1bd   ,0x15bd  ,
+   "K0"           ,0x1a30   ,0xa30    ,0x630   ,0xe30   ,0x1230  ,0x1630  ,
+   "K."           ,0x1a2e   ,0xa2e    ,0x62e   ,0xe2e   ,0x122e  ,0x162e  ,
+   "Enter"        ,0x1a0d   ,0xa0d    ,0x60d   ,0xe0d   ,0x120d  ,0x160d
+
+};
+
+
+static char * keyprefix[6]={"","S_","C_","A_","CS_","AS_"};
+
+static char * keycanonicalprefix[6]={"","\x8b","^","Act","^\x8b","Act\x8b"};
+
+static char * longprefix[6]={"","Shift","Ctrl","Act","Ctrl Shift","Act Shift"};
+
+
+
+typedef struct
+{
+ char * name;
+ ktype  kpatch;
+} kpatchstr;
+
+
+
+
+#define MAXPATCH3 16
+
+static kpatchstr kpatch3[MAXPATCH3]=
+{
+ "1",  "1"     ,0x31     ,0x21     ,0x401   ,0xc01   ,0x1201  ,0x1601  ,
+ "2",  "2"     ,0x32     ,0x40     ,0x0     ,0xc00   ,0x1000  ,0x1400  ,
+ "3",  "3"     ,0x33     ,0x23     ,0x403   ,0xc03   ,0x1203  ,0x1603  ,
+ "4",  "4"     ,0x34     ,0x24     ,0x404   ,0xc04   ,0x1204  ,0x1604  ,
+ "5",  "5"     ,0x35     ,0x25     ,0x405   ,0xc05   ,0x1205  ,0x1605  ,
+ "7",  "7"     ,0x37     ,0x26     ,0x407   ,0xc07   ,0x1207  ,0x1606  ,
+ "8",  "8"     ,0x38     ,0x2a     ,0x408   ,0xc08   ,0x1208  ,0x1608  ,
+ "9",  "9"     ,0x39     ,0x28     ,0x409   ,0xc09   ,0x1209  ,0x1609  ,
+ "0",  "0"     ,0x30     ,0x29     ,0x400   ,0xc00   ,0x1200  ,0x1600  ,
+ "=",  "="     ,0x3d     ,0x2b     ,0x42b   ,0xc2b   ,0x102b  ,0x142b  ,
+ ",",  ","     ,0x2c     ,0x3c     ,0x43c   ,0xc3c   ,0x103c  ,0x143c  ,
+ ".",  "."     ,0x2e     ,0x3e     ,0x43e   ,0xc3e   ,0x103e  ,0x143e  ,
+ ";",  ";"     ,0x3b     ,0x3a     ,0x43a   ,0xc3a   ,0x103a  ,0x143a  ,
+ "'",  "'"     ,0x27     ,0x22     ,0x427   ,0xc27   ,0x1027  ,0x1427  ,
+ "\\", "\\"    ,0x5c     ,0x7c     ,0x41c   ,0xc1c   ,0x101c  ,0x141c  ,
+ "/",  "/"     ,0x2f     ,0x3f     ,0x42f   ,0xc2f   ,0x102f  ,0x142f  , 
+};
+
+
+#define MAXPATCH35 17
+
+static kpatchstr kpatch35[MAXPATCH35]=
+{
+ "1",  "1"     ,0x31     ,0x21     ,0x401   ,0xc01   ,0x1201  ,0x1601  ,
+ "2",  "2"     ,0x32     ,0x22     ,0x402   ,0xc02   ,0x1202  ,0x1602  ,
+ "3",  "3"     ,0x33     ,0xa3     ,0x403   ,0xc03   ,0x1203  ,0x1603  ,
+ "4",  "4"     ,0x34     ,0x24     ,0x404   ,0xc04   ,0x1204  ,0x1604  ,
+ "5",  "5"     ,0x35     ,0x25     ,0x405   ,0xc05   ,0x1205  ,0x1605  ,
+ "7",  "7"     ,0x37     ,0x26     ,0x407   ,0xc07   ,0x1207  ,0x1606  ,
+ "8",  "8"     ,0x38     ,0x2a     ,0x408   ,0xc08   ,0x1208  ,0x1608  ,
+ "9",  "9"     ,0x39     ,0x28     ,0x409   ,0xc09   ,0x1209  ,0x1609  ,
+ "0",  "0"     ,0x30     ,0x29     ,0x400   ,0xc00   ,0x1200  ,0x1600  ,  
+ "£",  "#"     ,0x23     ,0x7e     ,0x423   ,0xc23   ,0x1023  ,0x1423  ,
+ "`",  "`"     ,0x60     ,0xac     ,0x60    ,0x60    ,-1      ,-1      ,
+ "=",  "="     ,0x3d     ,0x2b     ,0x42b   ,0xc2b   ,0x102b  ,0x142b  ,
+ ",",  ","     ,0x2c     ,0x3c     ,0x43c   ,0xc3c   ,0x103c  ,0x143c  ,
+ ".",  "."     ,0x2e     ,0x3e     ,0x43e   ,0xc3e   ,0x103e  ,0x143e  ,
+ ";",  ";"     ,0x3b     ,0x3a     ,0x43a   ,0xc3a   ,0x103a  ,0x143a  ,
+ "'",  "'"     ,0x27     ,0x40     ,0x600   ,0xe00   ,0x3000  ,0x3400  ,
+ "/",  "/"     ,0x2f     ,0x3f     ,0x42f   ,0xc2f   ,0x102f  ,0x142f  ,
+};
+
+
+
+static void keypatch(void)
+{
+ int         patch;
+ char      * target;
+ int         maxpatch;
+ kpatchstr * kpatch;
+ int         i;
+ int         os3;
+ int         os35;
+
+ os3=ISOS30;
+ os35=ISOS35;
+
+ if(os3 || os35)
+ {
+  os_cli("UKEYBOARD_PATCH3");
+
+  if(os35)                      /* notice os3 always true */
+  {
+   os_cli("UKEYBOARD_PATCH35");
+   maxpatch=MAXPATCH35;
+   kpatch=kpatch35;
+  }
+  else
+  {
+   maxpatch=MAXPATCH3;
+   kpatch=kpatch3;
+  }
+
+  for(patch=0;patch<maxpatch;patch++)
+  {
+   target=kpatch[patch].name;
+  
+   for(i=0;i<MNKEYS;i++)
+   {
+    if(!strncmp(target,ktable[i].name,KNLEN))
+    {
+     ktable[i]=kpatch[patch].kpatch;
+     break;
+    }
+   }
+  }
+ }
+}
+
+
+
+
+int isbadfunc(int key)
+{
+  return(
+         (key>F11      && key<=F12)      ||
+         (key>SHFT_F11 && key<=SHFT_F12) ||
+         (key>CTRL_F11 && key<=CTRL_F12) ||
+         (key>CTSH_F11 && key<=CTSH_F12) 
+       );
+}
+
+
+
+
+/* key codes page 1198 PRM */
+
+int isfunc(int key)
+{
+ return(
+        (key>=F1 && key<=F9)           || (key>=F10 && key<=F12) ||
+        (key>=SHFT_F1 && key<=SHFT_F9) || (key>=SHFT_F10 && key<=SHFT_F12) ||
+        (key>=CTRL_F1 && key<=CTRL_F9) || (key>=CTRL_F10 && key<=CTRL_F12) ||
+        (key>=CTSH_F1 && key<=CTSH_F9) || (key>=CTSH_F10 && key<=CTSH_F12)
+       );
+}
+
+
+
+
+/* returns either key type for string, or -1 for not a key string */
+
+int keycanonicaltype(char * string)
+{
+ int i;
+ int prefix=0;
+ int hit=0;
+
+ for(prefix=5;prefix>0;prefix--)
+ {
+  i=0;
+  while(1)
+  {
+   if(string[i]!=keyprefix[prefix][i]) break;
+   i++;
+   if(!keyprefix[prefix][i])
+   {
+    hit=1;
+    string+=i;
+    break;
+   }
+  }
+  if(hit) break;
+ }
+
+
+ for(i=0;i<MNKEYS;i++)
+ {
+  if(!cstrncmp(ktable[i].name,string,KNLEN)) return(i+(prefix<<8));
+ }
+
+ return(KEYNONE);
+}
+
+
+
+int keytype(char * string)
+{
+ int code;
+
+ code=keycanonicaltype(string);
+ if(code>=0) return(ktable[code & 0xFF].code[code>>8]);
+ else        return(code);
+}
+
+
+
+int keycode2canonical(int code)
+{
+ int    i;
+ int    j;
+
+ for(i=0;i<MNKEYS;i++)
+ {
+  for(j=0;j<6;j++)
+  {
+   if(ktable[i].code[j]==code) return(i+(j<<8));
+  }
+ }
+ return(KEYNONE);
+}
+
+
+int keycanonical2code(int ccode)
+{
+ return(ktable[ccode & 0xFF].code[ccode>>8]);
+}
+
+
+
+char * keystringcanonical(int ccode)
+{
+ static char name[20];
+ strcpy(name,keycanonicalprefix[ccode>>8]);
+ strncat(name,ktable[ccode & 0xFF].name,KNLEN);
+ return(name);
+}
+
+
+char * keylongstringcanonical(int ccode)
+{
+ static char name[20];
+
+ strcpy(name,longprefix[ccode>>8]);
+ strcat(name," ");
+
+ ccode&=0xFF;
+ if(ktable[ccode].name[0]=='K' && ktable[ccode].name[1]!=0)
+ {
+  strcat(name,"Keypad ");
+  strcat(name,ktable[ccode].name+1);
+ }
+ else
+ {
+  strncat(name,ktable[ccode & 0xFF].name,KNLEN);
+ }
+
+ return(name);
+}
+
+
+/* return string form for string */
+
+char * keystring(int code)
+{
+ static char name[12];
+ int         ccode;
+
+ ccode=keycode2canonical(code);
+ if(ccode>=0)
+ {
+  strcpy(name,keyprefix[ccode>>8]);
+  strncat(name,ktable[ccode & 0xFF].name,KNLEN);
+ }
+ else name[0]=0;
+
+ return(name);
+}
+
+
+
+/*****************************************************************************/
+/* chunk of code for handling keyboard escape sequences */
+
+#define CESC    0x1C0
+#define SESC    0x1C1
+#define AESC    0x1C2
+#define CSESC   0x1C3
+#define ASESC   0x1C4
+#define NESC    0x1C5
+#define SACESC  0x1C6
+#define ACESC   0x1C7
+
+#define XCESC   0x1D0
+#define XSESC   0x1D1
+#define XAESC   0x1D2
+#define XCSESC  0x1D3
+#define XASESC  0x1D4
+#define XNESC   0x1D5
+#define XSACESC 0x1D6
+#define XACESC  0x1D7
+
+
+
+#define XXCESC   0x1E0
+#define XXSESC   0x1E1
+#define XXAESC   0x1E2
+#define XXCSESC  0x1E3
+#define XXASESC  0x1E4
+#define XXNESC   0x1E5
+#define XXSACESC 0x1E6
+#define XXACESC  0x1E7
+
+
+
+static int keycaps;
+
+
+static os_error * keylo(int on)
+{
+ char string[32];
+
+ if(on) 
+ {
+  strcpy(string,"UKEYBOARD_ON ");
+
+  if(!(keycaps & KEYACTIONKEY))    strcat(string,"C"); /* C== Act is Ctrl  */
+  if(keycaps & KEYBREAKKEY)        strcat(string,"B"); /* B== Break active */
+  if(keycaps & KEYSCROLLLOCKKEY)   strcat(string,"S");
+  if(keycaps & KEYNUMLOCKKEY)      strcat(string,"N");
+
+  return(os_cli(string));
+ }
+ else return(os_cli("UKEYBOARD_OFF"));
+}
+
+
+static int keyescflag;
+
+static int keyexpand(int * key,int * pass)
+{
+ int ch=*key;
+
+ if(keyescflag)
+ {
+  *key=ch+keyescflag;
+  keyescflag=0;
+  *pass=0;
+  return(1);
+ }
+ else
+ if(ch>=CESC && ch<=ACESC)
+ {
+  keyescflag=((ch-CESC+1)<<10);
+  *key=-1;
+  return(0);
+ }
+ else
+ if(ch>=XCESC && ch<=XACESC)
+ {
+  keyescflag=((ch-XCESC+1)<<10)+0x200;
+  *key=-1;
+  return(0);
+ }
+ else
+ if(ch>=XXCESC && ch<=XXACESC)
+ {
+  keyescflag=((ch-XXCESC+1)<<10)+0x2000;
+  *key=-1;
+  return(0);
+ }
+
+ *pass=1;
+ return(1);
+}
+
+
+
+static void keytrash(void)
+{
+
+
+}
+
+
+static int keyboardon=0;
+static int repeatrate;
+static int brkeffect;
+static int saveautorepeat;
+
+os_error * keyboard_on(int autorepeat)
+{
+ os_regset rx;
+
+
+ saveautorepeat=autorepeat;
+
+ /* if keyboard not active, then stash auto rate */
+
+ if(!keyboardon && (keycaps & (KEYAUTORATE|KEYBREAKKEY))) 
+ {
+  rx.r[0]=196;
+  rx.r[1]=0;
+  rx.r[2]=255;
+
+  os_swix(OS_Byte,&rx);
+
+  repeatrate=rx.r[1];
+
+  rx.r[0]=247;
+  rx.r[1]=0;
+  rx.r[2]=255;
+
+  os_swix(OS_Byte,&rx);
+
+  brkeffect=rx.r[1];
+ }
+
+ if(keycaps & KEYAUTORATE)
+ {
+  if(autorepeat) autorepeat=repeatrate;
+  fx(196,autorepeat,0);
+ }
+
+ if(keycaps & KEYBREAKKEY)
+ {
+  fx(247,0x55,0);         /* was 0x45 */     /* make break effect %01010101 */
+ }
+
+ if(keycaps & (KEYNUMLOCKKEY|KEYSCROLLLOCKKEY))
+ {
+  fx(202,0,255-((keycaps & KEYNUMLOCKKEY)?4:0)      /* put num lock on */
+              -((keycaps & KEYSCROLLLOCKKEY)?2:0)); /* scroll lock off */
+  fx(118,0,0);                                      /* reflect in LED's */
+ }
+
+ keylo(1);
+
+ keyboardon=1;
+ keytrash();
+
+ return(NULL);
+}
+
+
+os_error * keyboard_off(void)
+{
+ if(keyboardon)
+ {
+  if(keycaps & KEYAUTORATE) fx(196,repeatrate,0);
+  if(keycaps & KEYBREAKKEY) fx(247,brkeffect,0);
+  keyboardon=0;
+ }
+
+ keylo(0);
+
+ keytrash();
+
+ return(NULL);
+}
+
+
+
+/* static keyfn xkeyfn; */
+
+
+static void fkeyfixzero(int handle)
+{
+ keyboard_on(saveautorepeat);
+ remzeroevent(fkeyfixzero,0);
+ USE(handle);
+}
+
+
+/*
+static os_error * keypress(int handle,int userhandle,int icon,int * key)
+{
+ os_error * err;
+ int        pass;
+
+ err=NULL;
+
+ if(keyexpand(key,&pass))
+ {
+  if(xkeyfn) err=xkeyfn(handle,userhandle,icon,key);
+ }
+
+ if(*key!=-1 && pass)
+ {
+  if(*key==0x1CC) 
+  {
+   if(keyboardon)
+   {
+    keyboard_off();
+    addzeroevent(fkeyfixzero,0);
+   }
+  }
+ }
+
+ if(!pass) *key=-1;
+
+ return(err);
+}
+*/
+
+
+
+os_error * keypress1(int * key,int * pass,int * good)
+{
+ *good=keyexpand(key,pass);
+ return(NULL);
+}
+
+
+os_error * keypress2(int * key,int pass)
+{
+
+ if(*key!=-1 && pass)
+ {
+  if(*key==0x1CC) 
+  {
+   if(keyboardon)
+   {
+    keyboard_off();
+    addzeroevent(fkeyfixzero,0);
+   }
+  }
+ }
+
+ if(!pass) *key=-1;
+
+ return(NULL);
+}
+
+
+
+
+/*
+
+os_error * keyaddkeyevent(keyfn fn,int handle,int userhandle)
+{
+ xkeyfn=fn;
+ return(addkeyevent(keypress,handle,userhandle));
+}
+
+os_error * keyremkeyevent(keyfn fn,int handle,int userhandle)
+{
+ return(remkeyevent(keypress,handle,userhandle));
+ USE(fn);
+}
+
+
+*/
+
+
+
+
+os_error * setkeyboardmode(int caps)
+{
+ keycaps=caps;
+ return(NULL);
+}
+
+
+os_error * initkeyboard(int caps)
+{
+ keycaps=caps;
+ keypatch();
+ return(NULL);
+}
+
+
+

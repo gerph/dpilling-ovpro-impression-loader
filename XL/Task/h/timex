@@ -1,0 +1,36 @@
+/*->h.timex */
+
+
+typedef struct
+{
+ unsigned int lo;
+ unsigned int hi;
+} arctime;
+
+
+#define SYSDTLEN 128
+
+extern char sysdstring[SYSDTLEN];
+extern char syststring[SYSDTLEN];
+
+extern int  monotonic(void);
+extern void getcurtime(arctime * time);
+extern int  filetime(fstat * f,arctime * t);
+extern int  cmptimes(fstat * f1,fstat * f2);
+extern int  cmptimex(arctime * t1,arctime * t2);
+extern void addtimex(arctime * t,unsigned int delta,int inc);
+extern void writets(char * string,char * format,arctime * timex);
+extern void writedate(char * string,arctime * timex);
+extern void writetime(char * string,arctime * timex);
+extern void writetimedate(char * string,arctime * timex);
+extern void getsysdate(char * format,int d,int t);
+extern void writesysst(char * string,int d,int t);
+extern void writesystime(char * string);
+extern void writesysdate(char * string);
+extern void writesystimedate(char * string);
+extern void writefiletime(char * string,fstat * stat);
+extern void writehms(char * str,int time);
+extern void timexinitsys(char * d,char * t);
+
+
+

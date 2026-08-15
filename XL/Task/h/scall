@@ -1,0 +1,6 @@
+/*->h.scall */
+
+extern void scallset(int * address);
+extern int  scall(int a1,int a2,int a3,int a4);
+
+

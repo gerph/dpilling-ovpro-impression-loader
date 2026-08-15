@@ -1,0 +1,268 @@
+#!/usr/bin/env riscos-amu -f
+# Makefile for OvProXL
+#
+
+#
+# Program specific options:
+#
+COMPONENT  = OvProXL
+
+# Specifies additional targets for startup
+#INITTARGET = inittarget
+
+# Specifies additional targets for clean
+#CLEANTARGET = cleantarget
+
+# Files to export as part of export_hdr or export_libs
+# To export to the library in a subdirectory, use an export like:
+#   ${EXP_LIB}.${COMPONENT}.h.myheader
+EXPORTS    = \
+			 ${EXP_LIB}.${COMPONENT}.h.akbd \
+             ${EXP_LIB}.${COMPONENT}.h.alloc \
+             ${EXP_LIB}.${COMPONENT}.h.allocalias \
+             ${EXP_LIB}.${COMPONENT}.h.applet \
+             ${EXP_LIB}.${COMPONENT}.h.avl \
+             ${EXP_LIB}.${COMPONENT}.h.bbc \
+             ${EXP_LIB}.${COMPONENT}.h.bf \
+             ${EXP_LIB}.${COMPONENT}.h.bits \
+             ${EXP_LIB}.${COMPONENT}.h.colour \
+             ${EXP_LIB}.${COMPONENT}.h.conf \
+             ${EXP_LIB}.${COMPONENT}.h.crc \
+             ${EXP_LIB}.${COMPONENT}.h.csv \
+             ${EXP_LIB}.${COMPONENT}.h.dbdec \
+             ${EXP_LIB}.${COMPONENT}.h.dbhi \
+             ${EXP_LIB}.${COMPONENT}.h.deb \
+             ${EXP_LIB}.${COMPONENT}.h.deb1 \
+             ${EXP_LIB}.${COMPONENT}.h.drag \
+             ${EXP_LIB}.${COMPONENT}.h.encrypt \
+             ${EXP_LIB}.${COMPONENT}.h.err \
+             ${EXP_LIB}.${COMPONENT}.h.etc \
+             ${EXP_LIB}.${COMPONENT}.h.flex \
+             ${EXP_LIB}.${COMPONENT}.h.font \
+             ${EXP_LIB}.${COMPONENT}.h.fsx \
+             ${EXP_LIB}.${COMPONENT}.h.hourglass \
+             ${EXP_LIB}.${COMPONENT}.h.key \
+             ${EXP_LIB}.${COMPONENT}.h.mlo \
+             ${EXP_LIB}.${COMPONENT}.h.mym \
+             ${EXP_LIB}.${COMPONENT}.h.os \
+             ${EXP_LIB}.${COMPONENT}.h.pane \
+             ${EXP_LIB}.${COMPONENT}.h.poll \
+             ${EXP_LIB}.${COMPONENT}.h.ram \
+             ${EXP_LIB}.${COMPONENT}.h.redraw \
+             ${EXP_LIB}.${COMPONENT}.h.save \
+             ${EXP_LIB}.${COMPONENT}.h.scall \
+             ${EXP_LIB}.${COMPONENT}.h.scanplus \
+             ${EXP_LIB}.${COMPONENT}.h.scrap \
+             ${EXP_LIB}.${COMPONENT}.h.sp \
+             ${EXP_LIB}.${COMPONENT}.h.sprite \
+             ${EXP_LIB}.${COMPONENT}.h.sprx \
+             ${EXP_LIB}.${COMPONENT}.h.task \
+             ${EXP_LIB}.${COMPONENT}.h.temp \
+             ${EXP_LIB}.${COMPONENT}.h.timex \
+             ${EXP_LIB}.${COMPONENT}.h.trans \
+             ${EXP_LIB}.${COMPONENT}.h.transform \
+             ${EXP_LIB}.${COMPONENT}.h.txcb \
+             ${EXP_LIB}.${COMPONENT}.h.txi \
+             ${EXP_LIB}.${COMPONENT}.h.werr \
+             ${EXP_LIB}.${COMPONENT}.h.wimp \
+             ${EXP_LIB}.${COMPONENT}.h.wimpt \
+             ${EXP_LIB}.${COMPONENT}.h.wimptext \
+             ${EXP_LIB}.${COMPONENT}.h.wos \
+             ${EXP_LIB}.${COMPONENT}.h.xhelp \
+             ${EXP_LIB}.${COMPONENT}.h.xmath \
+             ${EXP_LIB}.${COMPONENT}.h.xpoll \
+             ${EXP_LIB}.${COMPONENT}.h.xx2con \
+
+# Comma-separated list of paths to use for includes, such as:
+#	C:LibName.
+INCLUDES   = C:OvProCScript.
+
+# Space separated list of defines to set, eg -DDEBUG
+CDEFINES   = -DPROD -DPRODLOCK
+
+# Objects to build, using the format o.<name> (will be varied for build type)
+OBJS       = o.akbd \
+             o.alloc \
+             o.allocalias \
+             o.applet \
+             o.appletrun \
+             o.avl \
+             o.bbc \
+             o.bf \
+             o.bf2 \
+             o.bff \
+             o.bits \
+             o.colour \
+             o.conf \
+             o.crc \
+             o.csv \
+             o.dbdec \
+             o.dbhi \
+             o.deb \
+             o.deb1 \
+             o.drag \
+             o.encrypt \
+             o.encrypts \
+             o.err \
+             o.flex \
+             o.font \
+             o.fsx \
+             o.fsx2 \
+             o.hdr \
+             o.hourglass \
+             o.key \
+             o.linkbase \
+             o.math \
+             o.mlo \
+             o.mym \
+             o.os \
+             o.pane \
+             o.poll \
+             o.ram \
+             o.redraw \
+             o.save \
+             o.scall \
+             o.scanplus \
+             o.scrap \
+             o.sp \
+             o.sprite \
+             o.sprx \
+             o.swi \
+             o.task \
+             o.temp \
+             o.timex \
+             o.trans \
+             o.transform \
+             o.txcb \
+             o.txi \
+             o.werr \
+             o.wimp \
+             o.wimpt \
+             o.wimptext \
+             o.wos \
+             o.xhelp \
+             o.xmath \
+             o.xpoll \
+             o.xx2con \
+             o.xxpoll \
+
+include LibExport
+
+# Export rules
+# For any files you export with EXPORTS you may need to include an
+# export rule
+${EXP_LIB}.${COMPONENT}.h.akbd: h.akbd
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.alloc: h.alloc
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.allocalias: h.allocalias
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.applet: h.applet
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.avl: h.avl
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.bbc: h.bbc
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.bf: h.bf
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.bits: h.bits
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.colour: h.colour
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.conf: h.conf
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.crc: h.crc
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.csv: h.csv
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.dbdec: h.dbdec
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.dbhi: h.dbhi
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.deb: h.deb
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.deb1: h.deb1
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.drag: h.drag
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.encrypt: h.encrypt
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.err: h.err
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.etc: h.etc
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.flex: h.flex
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.font: h.font
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.fsx: h.fsx
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.hourglass: h.hourglass
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.key: h.key
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.mlo: h.mlo
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.mym: h.mym
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.os: h.os
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.pane: h.pane
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.poll: h.poll
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.ram: h.ram
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.redraw: h.redraw
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.save: h.save
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.scall: h.scall
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.scanplus: h.scanplus
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.scrap: h.scrap
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.sp: h.sp
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.sprite: h.sprite
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.sprx: h.sprx
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.swi: h.swi
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.task: h.task
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.temp: h.temp
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.timex: h.timex
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.trans: h.trans
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.transform: h.transform
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.txcb: h.txcb
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.txi: h.txi
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.werr: h.werr
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.wimp: h.wimp
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.wimpt: h.wimpt
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.wimptext: h.wimptext
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.wos: h.wos
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.xhelp: h.xhelp
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.xmath: h.xmath
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.xpoll: h.xpoll
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.xx2con: h.xx2con
+	${CP} $? $@ ${CPFLAGS}
+
+#---------------------------------------------------------------------------
+# Dynamic dependencies:

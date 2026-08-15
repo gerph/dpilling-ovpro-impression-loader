@@ -1,0 +1,22 @@
+/*->h.werr */
+
+
+#define WERRFTL 0x1
+#define WERRMSG 0x2
+
+
+void werr(int flags,char* format,...);
+
+
+extern void errorbox(char * message);
+extern int  messagebox(char * message);
+extern void fatalerror(char * message);
+extern void abend(os_error * e);
+extern void report(os_error * e);
+
+typedef void (*werrexitfn)(int code);   
+
+extern void werrsetexit(werrexitfn xwerrexit);
+
+
+

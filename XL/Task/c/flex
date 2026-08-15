@@ -1,0 +1,695 @@
+/*->c.flex */
+
+
+#define BOOL int
+#define TRUE 1
+#define FALSE 0
+
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <stdio.h>
+
+#include "h.os"
+#include "h.werr"
+#include "h.wimp"
+#include "h.wimpt"
+#include "h.swis"
+
+#include "h.err"
+
+
+#include "h.wos"
+#include "h.poll"
+
+#include "h.flex"
+
+
+#define FLEXEX
+
+
+/* There are two alternative implementations in this file. */
+
+
+typedef struct
+{
+  flex_ptr    anchor;    /* *anchor should point back to here.    */
+  int         size;      /* in bytes. Exact size of logical area. */
+
+#ifdef FLEXEX
+
+  flex_lockfn lock;      /* fn to call when block is moved        */
+  int         handle;    /* user handle                           */
+                         /* then the actual store follows.        */
+#endif
+
+
+} flex__rec;
+
+
+/* From base upwards, it's divided into store blocks of
+  a flex__rec
+  the space
+  align up to next word.
+*/
+
+
+
+static int roundup(int i)
+{
+ return(0xfffffffc & (i+3));
+}
+
+
+static flexblockstr flexbaseblock;
+
+
+
+
+static int freemem(void)
+{
+ int        cur;
+ int        next;
+ int        free;
+
+ cur=next=-1;
+ wimp_slotsize(&cur,&next,&free);
+
+ return(free);
+}
+
+
+#define APPSLOTMAX (32*1024*1024)
+
+int flex_freemem(void)
+{
+/* dprintf(4,"free=%d os=%d delta=%d",flex__freespace,freemem(),
+                                    flex__lim-flex__freep); */
+ char * limit;
+ int    free;
+
+ limit=flexbaseblock.flex__lim+freemem();
+ if(limit>(char*)(APPSLOTMAX)) limit=(char*)(APPSLOTMAX);
+ free=(limit-flexbaseblock.flex__freep);
+ free-=2*sizeof(flexblockstr);
+ if(free<0) free=0;
+
+ return(free);
+}
+
+
+
+/* read/write the top of available memory. *top == 0 -> just read. */
+
+static void flex__wimpslot(char **top)
+{
+ int dud = -1;
+ int slot = ((int) *top);
+
+ if(slot!=-1) slot-=0x8000;
+ if(!wimp_slotsize(&slot,&dud,&dud))
+ {
+  *top=(char*)slot+0x8000;
+ }
+}
+
+
+static void flex__slot(int delta,flexblockstr * fb)
+{
+ os_regset   rx;
+
+ if(delta)
+ {
+  if(fb->areano)
+  {
+   rx.r[0]=fb->areano;
+   rx.r[1]=delta;
+
+   os_swix(OS_ChangeDynamicArea,&rx);
+   if(delta>0) fb->flex__lim+=rx.r[1];
+   else        fb->flex__lim-=rx.r[1];
+  }
+  else
+  {
+   fb->flex__lim+=delta;
+   flex__wimpslot(&fb->flex__lim);
+  }
+ }
+}
+
+
+ /* Tries to get at least n more bytes, raising flex__lim and
+  returning TRUE if it can. */
+
+static os_error * flex__more(int n,flexblockstr * fb)
+{
+ os_error * err;
+ char     * prev;
+
+ err=NULL;
+
+ prev=fb->flex__lim;
+
+ flex__slot(n,fb);
+
+ if(fb->flex__lim<prev+n) /* restore state and lose extra memory */
+ {
+  flex__slot(prev-fb->flex__lim,fb);
+  err=geterror(EMEM);
+ }
+
+ return(err);
+}
+
+
+
+static void flex_demon(flexblockstr * fb)
+{
+ int free;
+
+ free=fb->flex__lim-fb->flex__freep;
+ free-=fb->overhead;
+
+ if(free>0) flex__slot(-free,fb);
+
+ remzeroevent((zerofn)flex_demon,(int)fb);
+
+ fb->demon=0;
+}
+
+
+/* there is a problem because addzeroevent() may be called before */
+/* events are initialised */
+
+static os_error * flex__give(flexblockstr * fb)
+{
+ int free;
+
+ if(!fb->demon)
+ {
+  free=fb->flex__lim-fb->flex__freep;
+  if(free>fb->overhead)
+  {
+   if(!addzeroevent((zerofn)flex_demon,(int)fb)) fb->demon=1;
+  }
+ }
+
+ return(NULL);
+}
+
+
+static os_error * flex__ensure(int n,flexblockstr * fb)
+{
+ n-=fb->flex__lim-fb->flex__freep;
+
+ if(n<=0) return(NULL);
+ else     return(flex__more(n,fb));
+}
+
+
+
+os_error * flex_alloca(flex_ptr anchor,int n,flexblockstr * fb)
+{
+ os_error  * err;
+ flex__rec * p;
+
+ err=NULL;
+
+
+ if(n<0)
+ {
+  *anchor=0;
+ }
+ else
+ {
+  err=flex__ensure(sizeof(flex__rec)+roundup(n),fb);
+  if(!err)
+  {
+   p=(flex__rec*)fb->flex__freep;
+   fb->flex__freep+=sizeof(flex__rec)+roundup(n);
+
+   p->anchor=anchor;
+   p->size=n;
+
+#ifdef FLEXEX
+   p->lock=NULL;
+#endif
+
+   *anchor=p+1; /* sizeof(flex__rec), that is */
+  }
+ }
+ return(err);
+}
+
+
+
+static os_error * flex__reanchor(flex__rec *p,int by,flexblockstr * fb)
+{
+ os_error * err;
+
+ /* Move all the anchors from p upwards. This is in anticipation
+    of that block of the heap being shifted. */
+
+ err=NULL;
+
+ while(1)
+ {
+  if((int)p>=(int)fb->flex__freep) break;
+  if(*(p->anchor)!=p+1)
+  {
+   err=geterror(EMEMF);
+   break;
+  }
+
+#ifdef FLEXEX
+  if(p->lock) p->lock(p->handle,by);
+#endif
+
+  *(p->anchor)=((char*)(p+1))+by;
+  p=(flex__rec*)(((char*)(p+1))+roundup(p->size));
+ }
+
+ return(err);
+}
+
+
+
+os_error * flex_freea(flex_ptr anchor,flexblockstr * fb)
+{
+ os_error  * err;
+
+ if(*anchor)
+ {
+  flex__rec * p=((flex__rec*) *anchor) - 1;
+  int roundsize=roundup(p->size);
+  flex__rec * next=(flex__rec*)(((char*)(p+1))+roundsize);
+
+  if(p->anchor!=anchor) err=geterror(EMEMF);
+  else
+  {
+   err=flex__reanchor(next,-(sizeof(flex__rec)+roundsize),fb);
+
+   if(!err)
+   {
+    memmove(p,next,fb->flex__freep-(char*)next);
+    fb->flex__freep -= sizeof(flex__rec)+roundsize;
+    err=flex__give(fb);
+    *anchor = 0;
+   }
+  }
+ } else err=NULL;
+
+ return(err);
+}
+
+
+
+
+
+os_error * flex_midextenda(flex_ptr anchor,int at,int by,flexblockstr * fb)
+{
+ os_error  * err;
+ flex__rec * p;
+ flex__rec * next;
+
+ err=NULL;
+
+ p=((flex__rec*)*anchor)-1;
+
+ if(p->anchor!=anchor) err=geterror(EMEMF);
+ else
+ if(at>p->size) err=geterror(EMEMF);
+ else
+ if(by<0 && (-by)>at) err=geterror(EMEMF);
+ else
+ if(by==0)
+ {
+  /* do nothing */
+ }
+ else
+ if(by>0)
+ {                                        /* extend */
+  int growth=roundup(p->size+by)-roundup(p->size);
+  /* Amount by which the block will actually grow. */
+
+  err=flex__ensure(growth,fb);
+  if(!err)
+  {
+   next=(flex__rec*)(((char*)(p+1))+roundup(p->size));
+
+   /* The move has to happen in two parts because the moving
+      of objects above is word-aligned, while the extension within
+      the object may not be. */
+
+   err=flex__reanchor(next,growth,fb);
+   if(!err)
+   {
+    memmove(((char*)next)+roundup(growth),next,fb->flex__freep-(char*) next);
+
+    fb->flex__freep+=growth;
+
+    memmove(((char*)(p+1))+at+by,((char*)(p+1))+at,p->size-at);
+    p->size+=by;
+   }
+  }
+ }
+ else
+ { /* The block shrinks. */
+  int shrinkage;
+
+  next=(flex__rec*)(((char*)(p+1))+roundup(p->size));
+
+  by=-by; /* a positive value now */
+  shrinkage=roundup(p->size) - roundup(p->size - by);
+      /* a positive value */
+
+  memmove(((char*)(p+1))+at-by,((char*)(p+1))+at,p->size-at);
+  p->size-=by;
+
+  err=flex__reanchor(next,-shrinkage,fb);
+  if(!err)
+  {
+   memmove(((char*)next)-shrinkage,next,fb->flex__freep-(char*) next);
+   fb->flex__freep-=shrinkage;
+   err=flex__give(fb);
+  }
+ }
+ return(err);
+}
+
+
+
+
+os_error * flex_extenda(flex_ptr anchor,int newsize,flexblockstr * fb)
+{
+ flex__rec *p=((flex__rec*) *anchor)-1;
+ return(flex_midextenda(anchor,p->size,newsize-p->size,fb));
+}
+
+
+
+
+
+/* called when we propose to change amount of stuff in flex block */
+
+os_error * flex_chunka(flex_ptr anchor,int size,int chunksize,
+                                                          flexblockstr * fb)
+{
+ os_error * err;
+ flex__rec *p = ((flex__rec*) *anchor)-1;
+
+ err=NULL;
+
+ if((size>=p->size) || (p->size>(size+(3*chunksize)/2)))
+ {
+  while(chunksize)
+  {
+   err=flex_extenda(anchor,(size/chunksize+1)*chunksize,fb);
+   if(!err) break;
+   chunksize/=2;
+  }
+ }
+
+ return(err);
+}
+
+
+
+
+os_error * flex_overheada(int overhead,flexblockstr * fb)
+{
+ os_error * err;
+ int        delta;
+
+ err=NULL;
+
+ overhead=roundup(overhead);
+
+ delta=fb->flex__lim-fb->flex__freep;
+ delta=overhead-delta;
+
+ if(delta>0)
+ {
+  flex__slot(delta,fb);
+ }
+ else
+ if(delta<0)
+ {
+  err=flex__give(fb);
+ }
+
+ if(!err)
+ {
+  fb->overhead=overhead;
+ }
+
+ return(err);
+}
+
+
+int flex_getoverheada(flexblockstr * fb)
+{
+ return(fb->overhead);
+}
+
+
+/**************************************************************************/
+
+os_error * flex_createarea(flexblockstr ** fbp,int bits,int max,char * name)
+{
+ os_error     * err;
+ os_regset      rx;
+ flexblockstr * fb;
+ flexblockstr * next;
+
+ rx.r[0]=0;
+ rx.r[1]=-1;
+ rx.r[2]=0;
+ rx.r[3]=-1;
+ rx.r[4]=bits;
+ rx.r[5]=max;
+ rx.r[6]=0;
+ rx.r[7]=0;
+ rx.r[8]=(int)name;
+
+ err=os_swix(OS_DynamicArea,&rx); 
+ if(!err)
+ {
+  fb=*fbp;
+
+  fb->areano=rx.r[1];
+  fb->uses=0;
+  fb->demon=0;
+  fb->flex__freep=fb->flex__lim=fb->flex__base=(char*)rx.r[3];
+
+  next=flexbaseblock.next;
+  fb->prev=&flexbaseblock;
+  fb->next=next;
+  flexbaseblock.next=fb;
+  if(next) next->prev=fb;
+ }
+ else
+ {
+  *fbp=&flexbaseblock;
+  err=NULL;
+ }
+
+ return(err);
+}
+
+
+os_error * flex_deletearea(flexblockstr * fb)
+{
+ os_regset      rx;
+ os_error     * err;
+ flexblockstr * next;
+ flexblockstr * prev;
+
+ err=NULL;
+
+ if(fb->areano && fb->uses--==0)
+ {
+  rx.r[0]=1;
+  rx.r[1]=fb->areano;
+  err=os_swix(OS_DynamicArea,&rx);
+
+  next=fb->next;
+  prev=fb->prev;
+
+  if(next) next->prev=prev;
+  if(prev) prev->next=next;
+ }
+
+ return(err);
+}
+
+
+
+os_error * flex_finit(void)
+{
+ while(flexbaseblock.next) flex_deletearea(flexbaseblock.next);
+ return(NULL);
+}
+
+
+/**************************************************************************/
+
+os_error * flex_alloc(flex_ptr anchor,int n)
+{
+ return(flex_alloca(anchor,n,&flexbaseblock));
+}
+
+os_error * flex_free(flex_ptr anchor)
+{
+ return(flex_freea(anchor,&flexbaseblock));
+}
+
+os_error * flex_extend(flex_ptr anchor,int newsize)
+{
+ return(flex_extenda(anchor,newsize,&flexbaseblock));
+}
+
+os_error * flex_midextend(flex_ptr anchor,int at,int by)
+{
+ return(flex_midextenda(anchor,at,by,&flexbaseblock));
+}
+
+os_error * flex_chunk(flex_ptr anchor,int size,int chunksize)
+{
+ return(flex_chunka(anchor,size,chunksize,&flexbaseblock));
+}
+
+os_error * flex_overhead(int overhead)
+{
+ return(flex_overheada(overhead,&flexbaseblock));
+}
+
+int flex_getoverhead(void)
+{
+ return(flex_getoverheada(&flexbaseblock));
+}
+
+/****************************************************************************/
+
+
+#ifdef FLEXEX
+os_error * flex_setlock(flex_ptr anchor,flex_lockfn lockfn,int handle)
+{
+ flex__rec *p = ((flex__rec*) *anchor)-1;
+ p->lock=lockfn;
+ p->handle=handle;
+ return(NULL);
+}
+#endif
+
+
+
+os_error * flex_size(flex_ptr anchor,int * size)
+{
+ os_error  * err;
+ flex__rec * p=((flex__rec*)*anchor)-1;
+
+ if(p->anchor!=anchor) err=geterror(EMEMF);
+ else                  err=NULL;
+
+ *size=p->size;
+
+ return(err);
+}
+
+
+os_error * flex_swop(flex_ptr anchor1,flex_ptr anchor2)
+{
+ flex__rec * p1=((flex__rec*)*anchor1)-1;
+ flex__rec * p2=((flex__rec*)*anchor2)-1;
+
+ p1->anchor=anchor2;
+ p2->anchor=anchor1;
+
+ *anchor1=p2+1;
+ *anchor2=p1+1;
+
+ return(NULL);
+}
+
+
+
+
+
+os_error * flex_init(void)
+{
+ os_error * err;
+ void     * a;
+
+ flexbaseblock.flex__lim=(char*)-1;
+ flex__wimpslot(&flexbaseblock.flex__lim);
+
+ flexbaseblock.flex__base=flexbaseblock.flex__freep=flexbaseblock.flex__lim;
+
+ /* Check that we're in the Wimp environment. */
+
+ err=flex_alloc(&a,1);
+ if(err) err=geterror(ETASK);
+ else    err=flex_free(&a);
+
+ return(err);
+}
+
+
+/**************************************************************************/
+
+
+#ifndef PROD
+
+void flex_debug(flex_ptr anchor,int line)
+{
+ flex__rec *p = ((flex__rec*) *anchor)-1;
+
+ dprintf(line,"anchor=%x p=%x p->anchor=%x",anchor,p,p->anchor);
+}
+
+
+
+int flex_checka(flexblockstr * fb)
+{
+ flex__rec * p;
+ char      * q;
+
+ p=(flex__rec *)fb->flex__base;
+
+ while(((int)p)<((int)fb->flex__freep))
+ {
+  q=*(p->anchor);
+
+  if(q<((char*)fb->flex__base) || q>((char*)fb->flex__freep))
+  {
+   dprintf(0,"flex pointer at %x points to illegal address.",(int)p);
+   return(1);
+  }
+
+  if(*(p->anchor)!=(((char*)(p+1))))
+  {
+   dprintf(1,"bad flex blockat %x.",(int)p);
+   return(1);
+  }
+
+  dprintf(2,"block %x len=%d.",p,p->size); 
+
+  p=(flex__rec*)(((char*)(p + 1))+roundup(p->size));
+ }
+
+ return(0);
+}
+
+
+int flex_check(int fp)
+{
+ return(flex_checka(&flexbaseblock));
+}
+
+
+
+#endif
+
+
+

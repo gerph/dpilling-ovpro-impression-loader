@@ -1,0 +1,17 @@
+/*->h.throwback */
+
+
+#define Throwback_ReasonProcessing   0
+#define Throwback_ReasonErrorDetails 1
+#define Throwback_ReasonInfoDetails  2
+
+#define DDEUtils_ThrowbackRegister   0x42585
+#define DDEUtils_ThrowbackUnRegister 0x42586
+#define DDEUtils_ThrowbackStart      0x42587
+#define DDEUtils_ThrowbackSend       0x42588
+#define DDEUtils_ThrowbackEnd        0x42589
+
+extern os_error * throwbackstart(void);
+extern os_error * throwbackend(void);
+extern os_error * throwbacksend(int reason,...);
+

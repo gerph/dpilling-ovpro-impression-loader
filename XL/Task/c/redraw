@@ -1,0 +1,375 @@
+/*->c.redraw */
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+#include <stdarg.h>
+
+
+#include "h.swis"
+#include "h.kernel"
+#include "h.bbc"
+#include "h.os"
+#include "h.wimp"
+#include "h.wimpt"
+
+#include "h.wos"
+#include "h.mym"
+
+#include "h.poll"
+#include "h.xmath"
+#include "h.etc"
+
+#include "h.colour"
+
+#include "h.redraw"
+
+
+
+
+
+
+
+
+int iconinredraw(wimp_redrawstr * redrawstr,iconstr * icon)
+{
+ int        ox;
+ int        oy;
+ int        ylo;
+ int        yhi;
+ int        xlo;
+ int        xhi;
+
+ ox=redrawstr->box.x0-redrawstr->scx;
+ oy=redrawstr->box.y1-redrawstr->scy;
+
+ ylo=(redrawstr->g.y1-oy);            /* small -ve. number, top of window */
+ yhi=(redrawstr->g.y0-oy);            /* bigger, bottom of window */
+ xlo=(redrawstr->g.x0-ox);
+ xhi=(redrawstr->g.x1-ox);
+
+
+ return(((icon->ix0>=xlo && icon->ix0<=xhi) ||
+         (icon->ix1>=xlo && icon->ix1<=xhi) ||
+         (xlo>=icon->ix0 && xlo<=icon->ix1) ||
+         (xhi>=icon->ix0 && xhi<=icon->ix1)) &&
+        ((icon->iy0<=ylo && icon->iy0>=yhi) ||
+         (icon->iy1<=ylo && icon->iy1>=yhi) ||
+         (ylo>=icon->iy0 && ylo<=icon->iy1) ||
+         (yhi>=icon->iy0 && yhi<=icon->iy1)));
+}
+
+
+os_error * redrawslider(wimp_redrawstr * redrawstr,int i,int w,
+                                int colour,int value,int max)
+{
+ os_error * err;
+ int        ox;
+ int        oy;
+ iconstr    icon;
+ int        sx;
+ int        ht;
+ int        wd;
+
+ ox=redrawstr->box.x0-redrawstr->scx;
+ oy=redrawstr->box.y1-redrawstr->scy;
+
+ err=geti(w,i,&icon);
+
+ if(iconinredraw(redrawstr,&icon))
+ {
+  err=wimp_setcolour(colour & 0xFF);
+
+  ht=icon.iy1-icon.iy0-cvdu.deltay;
+  wd=icon.ix1-icon.ix0-cvdu.deltax;
+  sx=scale(value,wd,max);
+
+  bbc_rectanglefill(ox+icon.ix0,oy+icon.iy0,sx,ht);
+
+  if(colour & 0xFF00)
+  {
+   wimp_setcolour((colour>>8) & 0xFF);
+   bbc_rectanglefill(ox+icon.ix0+sx,oy+icon.iy0,wd-sx,ht);
+  }
+ }
+ return(err);
+}
+
+
+
+
+
+os_error * redrawslider3(wimp_redrawstr * redrawstr,int i,int w,
+                                int colour,int value,int max,int min)
+{
+ os_error * err;
+ int        ox;
+ int        oy;
+ iconstr    icon;
+ int        sx;
+ int        ht;
+ int        wd;
+
+ ox=redrawstr->box.x0-redrawstr->scx;
+ oy=redrawstr->box.y1-redrawstr->scy;
+
+ err=geti(w,i,&icon);
+
+ if(iconinredraw(redrawstr,&icon))
+ {
+  err=wimp_setcolour(colour & 0xFF);
+
+  ht=icon.iy1-icon.iy0-cvdu.deltay;
+  wd=(icon.ix1-icon.ix0)/2;
+
+  sx=scale(value,wd-cvdu.deltax,value>=0?max:-min);
+
+  if(ABS(sx)<cvdu.deltax)
+  {
+   wd-=cvdu.deltax/2;
+   sx=cvdu.deltax;
+  }
+
+  bbc_rectanglefill(ox+icon.ix0+wd,oy+icon.iy0,sx,ht);
+ }
+ return(err);
+}
+
+
+
+
+
+
+
+
+
+os_error * redrawslider2(wimp_redrawstr * redrawstr,int i1,int i2,int handle,
+                                                           int value,int max)
+{
+ os_error * err;
+ int        ox;
+ int        oy;
+ iconstr    icon1;
+ iconstr    icon2;
+ int        h;
+ int        w;
+ int        dx;
+ int        dy;
+ int        x;
+ int        y;
+
+ ox=redrawstr->box.x0-redrawstr->scx;
+ oy=redrawstr->box.y1-redrawstr->scy;
+
+ err=geti(handle,i1,&icon1);
+
+ if(iconinredraw(redrawstr,&icon1))
+ {
+  err=geti(handle,i2,&icon2);
+
+  x=ox+icon2.ix0+(value*(icon2.ix1-icon2.ix0-cvdu.deltax))/max;
+  y=oy+icon1.iy0;
+
+  h=icon1.iy1-icon1.iy0;
+  w=(h*2)/3;
+
+  dy=h/3;
+  dx=w/2;
+
+  err=wimp_setcolour(WIMPBLACK);
+
+  bbc_move(x,y);
+  bbc_move(x-dx,y+dy);
+  bbc_plot(bbc_TriangleFill+bbc_DrawAbsFore,x+dx,y+dy);
+  bbc_rectanglefill(x-dx,y+dy,w,2*dy-cvdu.deltay);
+  err=wimp_setcolour(WIMPWHITE);
+  bbc_rectanglefill(x-dx+cvdu.deltax,y+dy+cvdu.deltay,
+                                     w-2*cvdu.deltax,2*dy-3*cvdu.deltay);
+ }
+ return(err);
+}
+
+
+
+
+os_error * redrawscale(wimp_redrawstr * redrawstr,int in,int handle)
+{
+ os_error * err;
+ int        ox;
+ int        oy;
+ iconstr    icon;
+ int        h;
+ int        w;
+ int        i;
+ int        x;
+ int        y;
+ int        dx;
+ int        dy;
+
+ ox=redrawstr->box.x0-redrawstr->scx;
+ oy=redrawstr->box.y1-redrawstr->scy;
+
+ err=geti(handle,in,&icon);
+
+ if(iconinredraw(redrawstr,&icon))
+ {
+  h=icon.iy1-icon.iy0;
+  w=icon.ix1-icon.ix0;
+
+  err=wimp_setcolour(WIMPWHITE);
+  bbc_rectanglefill(ox+icon.ix0,oy+icon.iy0,w-cvdu.deltax,h-cvdu.deltay);
+
+  err=wimp_setcolour(WIMPBLACK);
+
+  dy=h/4;
+  dx=w/20;
+  y=oy+icon.iy1-cvdu.deltay;
+  x=ox+icon.ix0;
+  for(i=0;i<20;i++)
+  {
+   bbc_move(x,y);
+   if(i==10) bbc_draw(x,y-3*dy);
+   else
+   if(i==5 || i==15) bbc_draw(x,y-2*dy);
+   else              bbc_draw(x,y-dy);
+   x+=dx;
+  }
+ }
+ return(err);
+}
+
+
+
+os_error * transparentblock(int x0,int y0,int x1,int y1)
+{
+ int  x;
+ int  xlo;
+ int  xhi;
+ int  ylo;
+ int  yhi;
+ int  shift;
+ int  step;
+
+ step=12;
+
+ wimp_setcolour(WIMPWHITE);
+
+ bbc_rectanglefill(x0,y0,x1-x0-cvdu.deltax,y1-y0-cvdu.deltay);
+
+ wimp_setcolour(WIMPBLACK);
+
+ y1-=cvdu.deltay;
+ x1-=cvdu.deltax;
+
+ shift=(y1-y0);
+
+ x=x0-shift;
+
+ while(x<x1)
+ {
+  xlo=x;
+  xhi=xlo+shift;
+
+  ylo=y0;
+  yhi=y1;
+
+  if(xlo<x0) 
+  {
+   ylo=y0+(x0-xlo);
+   xlo=x0;
+  }
+
+  if(xhi>x1) 
+  {
+   yhi=y1+(x1-xhi);
+   xhi=x1;
+  }
+
+  bbc_move(xlo,ylo);
+  bbc_draw(xhi,yhi);
+
+  x+=step;
+ }
+
+ return(NULL);
+}
+
+
+
+os_error * redrawblock(wimp_redrawstr * redrawstr,int w,int i,int pal)
+{
+ os_error * err;
+ int        ox;
+ int        oy;
+ iconstr    icon;
+
+ ox=redrawstr->box.x0-redrawstr->scx;
+ oy=redrawstr->box.y1-redrawstr->scy;
+
+ err=geti(w,i,&icon);
+
+ if(iconinredraw(redrawstr,&icon))
+ {
+  if(pal==-1)
+  {
+   transparentblock(ox+icon.ix0,oy+icon.iy0,
+                    ox+icon.ix1,oy+icon.iy1);
+  }
+  else
+  {
+   setgcol(pal);
+   bbc_rectanglefill(ox+icon.ix0,oy+icon.iy0,
+                icon.ix1-icon.ix0-cvdu.deltax,icon.iy1-icon.iy0-cvdu.deltay);
+  }
+ }
+ return(err);
+}
+
+
+
+os_error * setclipwindow(wimp_redrawstr * redrawstr,wimp_box * box,
+                                   wimp_box * grbox,int * visible)
+{
+ wimp_box clipbox;
+
+ *grbox=redrawstr->g;
+
+ if(grbox->x0>box->x0) clipbox.x0=grbox->x0;
+ else                  clipbox.x0=box->x0;
+
+ if(grbox->x1<box->x1) clipbox.x1=grbox->x1;
+ else                  clipbox.x1=box->x1;
+
+ if(grbox->y0>box->y0) clipbox.y0=grbox->y0;
+ else                  clipbox.y0=box->y0;
+
+ if(grbox->y1<box->y1) clipbox.y1=grbox->y1;
+ else                  clipbox.y1=box->y1;
+
+
+ if(clipbox.x0>(clipbox.x1-cvdu.deltax) || clipbox.y0>(clipbox.y1-cvdu.deltay))
+ {
+  *visible=0;
+  return(NULL);
+ }
+ else
+ {
+  *visible=1;
+  redrawstr->g=clipbox;
+  return(bbc_gwindow(clipbox.x0,clipbox.y0,
+                    clipbox.x1-cvdu.deltax,clipbox.y1-cvdu.deltay));
+ }
+}
+
+
+os_error * resetclipwindow(wimp_redrawstr * redrawstr,wimp_box * grbox)
+{
+ redrawstr->g=*grbox;
+
+ return(bbc_gwindow(grbox->x0,grbox->y0,
+                         grbox->x1-cvdu.deltax,grbox->y1-cvdu.deltay));
+}
+
+

@@ -1,0 +1,8 @@
+/*->h.scanplus */
+
+extern void startscan(void);
+extern void endscan(void);
+extern int nextitem(fxstat * f);
+extern os_error * initscan(char * dirname);
+
+

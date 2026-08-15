@@ -1,0 +1,24 @@
+/*->h.redraw */
+
+extern int        iconinredraw(wimp_redrawstr * redrawstr,iconstr * icon);
+extern os_error * redrawslider(wimp_redrawstr * redrawstr,int i,int w,
+                                int colour,int value,int max);
+extern os_error * redrawblock(wimp_redrawstr * redrawstr,int w,int i,int pal);
+extern os_error * redrawscale(wimp_redrawstr * redrawstr,int in,int handle);
+
+extern os_error * redrawslider2(wimp_redrawstr * redrawstr,int i1,int i2,
+                                               int handle,int value,int max);
+
+extern os_error * redrawslider3(wimp_redrawstr * redrawstr,int i,int w,
+                                       int colour,int value,int max,int min);
+
+
+extern os_error * transparentblock(int x0,int y0,int x1,int y1);
+
+extern os_error * setclipwindow(wimp_redrawstr * redrawstr,wimp_box * box,
+                                wimp_box * scrapbox,int * visible);
+
+extern os_error * resetclipwindow(wimp_redrawstr * redrawstr,
+                                               wimp_box * scrapbox);
+
+

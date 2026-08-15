@@ -1,0 +1,36 @@
+/*->h.mlo */
+
+#define MFINFO 0x1
+
+#define MSHADE 0x20
+
+typedef os_error * (*menudecodefn)(int * menu);
+typedef os_error * (*menudynamicfn)(int * menu,int * handle);
+
+typedef struct menustr
+{
+ int          * menuptr;
+ int            flags;
+ menudecodefn   decode;
+ menudynamicfn  dynamic;
+} menustr;
+
+
+extern menustr * menus;
+
+extern int usermenuindex;
+
+extern os_error * openupmenu(int handle);
+extern os_error * menulostart(char * path,char * leaf);
+extern void setmenufns(int n,menudecodefn decode,menudynamicfn dynamic);
+extern void setmenudynamic(int n,int item);
+extern void setmenuflags(int n,int flags);
+extern void tickmenust(int n,int item,int state);
+extern void unshademst(int n,int item,int state);
+
+extern os_error * createusermenu(menudecodefn decode,menudynamicfn dynamic);
+extern os_error * addusermenu(char * string,int flags);
+extern int * completeusermenu(char * title);
+
+
+

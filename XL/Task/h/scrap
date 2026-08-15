@@ -1,0 +1,10 @@
+/*->h.scrap */
+
+extern int        programinstance(void);
+extern char     * sc_name(int sh);
+extern char     * sc_namex(int sh);
+extern os_error * sc_create(int * sh);
+extern os_error * sc_remove(int sh,os_error * err);
+extern os_error * scrapinit(char * scrpname,char * tskname);
+extern os_error * scrapfinit(void);
+

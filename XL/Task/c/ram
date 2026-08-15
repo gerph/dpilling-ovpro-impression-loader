@@ -1,0 +1,373 @@
+/*->c.ram     */
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <signal.h>
+#include <ctype.h>
+#include <time.h>
+#include <stdarg.h>
+
+
+#include "h.os"
+#include "h.wimp"
+
+
+#include "h.wos"
+#include "h.poll"
+
+#include "h.ram"
+
+
+/*****************************************************************************/
+                         /* RAM Transfer code */
+
+
+
+
+
+/*****************************************************************************/
+                       /* Receiving stuff via RAM */
+
+static int ramread=0;
+static int readsink=0;
+
+
+static char * readbuff;
+static char * readptr;
+static int    readsize;
+static char * readtop;
+
+       int    readextent;
+
+int           readmyref=-1;  /* our ref no. for read messages              */
+
+static int    readyourref;   /* the other sides ref no. for read messages  */
+static int    readtask;
+
+static int    readdone;
+
+static char   myrambuff[256];
+
+
+os_error * armfetch(wimp_msgstr * msg)
+{
+ readyourref=msg->hdr.my_ref;
+ readtask=msg->hdr.task;
+ return(NULL);
+}
+
+
+static os_error * sendramfetch(void)
+{
+ os_error * err;
+ wimp_msgstr msg;
+
+ msg.hdr.your_ref=readyourref;
+ msg.hdr.action=(wimp_msgaction)6;
+ msg.hdr.size=28;
+ msg.data.ramfetch.addr=readbuff;
+ msg.data.ramfetch.nbytes=readsize;
+ err=wimp_sendmessage((wimp_etype)18,&msg,readtask);
+ readmyref=msg.hdr.my_ref;
+
+ return(err);
+}
+
+
+/* we have received a ram transmit and thus load our buffer */
+
+os_error * ramloadbuffer(wimp_msgstr * msg)
+{
+ readptr=readbuff;
+ readtop=readbuff+msg->data.ramtransmit.nbyteswritten;
+ return(NULL);
+}
+
+
+/* called when readmyref has not been acked */
+
+static os_error * readack(wimp_msgstr * msg)
+{
+ readsink=1;
+ readdone=1;
+ return(NULL);
+ msg=msg;
+}
+
+
+/* called when a RAMFETCH returns successfully */
+
+os_error * readmess(wimp_msgstr * msg)
+{
+ os_error * err;
+
+ err=ramloadbuffer(msg);
+ armfetch(msg);
+ readdone=1;
+
+ return(err);
+}
+
+
+/* called when the buffer empties to get some more */
+
+static void ramreadbuff(char * buff,int size)
+{
+ if((readtop-readbuff)<readsize)
+ {
+  readsink=1;
+  return;
+ }
+
+ readbuff=buff;
+ readsize=size;
+
+ sendramfetch();
+ addack(readack,readmyref);
+ readdone=0;
+ while(!readdone) poll();
+}
+
+
+os_error * ramreadn(void * buff,int size,int * n)
+{
+ os_error * err;
+ int chunk;
+ int bytesread;
+
+ err=NULL;
+ bytesread=0;
+
+ if(!readsink && size)
+ {
+  while(size)
+  {
+   if(readptr>=readtop)
+   {
+    ramreadbuff(buff,size);
+    if(readsink) break;
+   }
+
+   if((readtop-readptr)>size) chunk=size;
+   else                       chunk=readtop-readptr;
+
+   if(readptr!=buff) memcpy(buff,readptr,chunk);
+   buff=(void *)(((char *)buff)+chunk);
+   readptr+=chunk;
+   size-=chunk;
+   bytesread+=chunk;
+  }
+ }
+
+ *n=bytesread;
+
+ return(err);
+}
+
+
+/* is the next file opened for read going to be from RAM */
+
+int pendingramread(void)
+{
+ return(ramread);
+}
+
+
+/* the next file to be open for read, will come from RAM */
+
+os_error * ramnextreadfile(wimp_msgstr * msg)
+{
+ os_error * err;
+
+ ramread=1;
+ readsink=0;
+ armfetch(msg);
+ readbuff=myrambuff;
+ readsize=sizeof(myrambuff);
+ readextent=msg->data.datasave.estsize+1;
+ err=sendramfetch();
+
+ return(err);
+}
+
+
+/*****************************************************************************/
+                       /* Sending stuff via RAM */
+
+static int ramwrite=0;
+static int writesink=0;
+
+       int writemyref=-1;  /* our ref. for write messages         */
+
+static int writeyourref;   /* other sides ref. for write messages */
+static int writetask;
+
+static char * writedestbuff;
+static char * writedestptr;
+static int    writedestsize;
+static int    byteswritten;
+
+static int    writedone;
+
+
+static void armsend(wimp_msgstr * msg)
+{
+ writetask=msg->hdr.task;
+ writeyourref=msg->hdr.my_ref;
+ writedestsize=msg->data.ramfetch.nbytes;
+ writedestbuff=msg->data.ramfetch.addr;
+ writedestptr=writedestbuff;
+}
+
+
+static os_error * writeack(wimp_msgstr * msg)
+{
+ writesink=1;
+ writedone=1;
+ return(NULL);
+ msg=msg;
+}
+
+
+os_error * writemess(wimp_msgstr * msg)
+{
+ armsend(msg);
+ writedone=1;
+ return(NULL);
+}
+
+
+static os_error * sendramtran(int last)
+{
+ os_error    * err;
+ wimp_msgstr   msg;
+
+ msg.hdr.action=(wimp_msgaction)7;
+ msg.hdr.size=28;
+ msg.hdr.your_ref=writeyourref;
+
+ msg.data.ramtransmit.addr=writedestbuff;
+ msg.data.ramtransmit.nbyteswritten=writedestptr-writedestbuff;
+ err=wimp_sendmessage((wimp_etype)(last?17:18),&msg,writetask);
+ writemyref=msg.hdr.my_ref;
+
+ return(err);
+}
+
+
+static os_error * ramwritebuff(int last)
+{
+ os_error * err;
+
+ writedone=0;
+
+ err=sendramtran(last);
+ if(!err)
+ {
+  if(!last)
+  {
+   addack(writeack,writemyref);
+
+
+/* dprintf(4,"ramwritebuff in %d ref=%d ",writedestptr-writedestbuff,writemyref); */
+
+   while(!writedone) poll();
+   byteswritten=0;
+
+/* dprintf(5,"ramwritebuff out writedestsize=%d",writedestsize); */
+  }
+ }
+ return(err);
+}
+
+
+/* sends the contents of the buffer */
+
+os_error * ramwriten(void * buff,int size,int * n)
+{
+ os_error * err;
+ int        chunk;
+ int        left;
+
+ err=NULL;
+
+/* dprintf(5,"ramwriten in size=%d",size); */
+
+ left=size;
+
+ while(left)
+ {
+  chunk=left;
+
+  if(chunk>(writedestsize-byteswritten)) chunk=writedestsize-byteswritten;
+
+  err=wimp_transferblock(taskhandle,buff,writetask,writedestptr,chunk);
+  if(err)
+  {
+   writesink=1;
+   return(err);
+  }
+
+  buff=(void*)((char*)buff+chunk);
+  writedestptr+=chunk;
+  byteswritten+=chunk;
+
+  /* tell the other application we've done ram transfer */
+
+  if(byteswritten==writedestsize) err=ramwritebuff(0);
+
+  left-=chunk;
+ }
+
+/* dprintf(5,"ramwriten out size=%d",size); */
+
+ *n=size;
+
+ return(err);
+}
+
+
+/* is the next file opened for write going to be to RAM */
+
+int pendingramwrite(void)
+{
+ return(ramwrite);
+}
+
+
+/* the next file to be open for write, will go to RAM */
+
+os_error * ramnextwritefile(wimp_msgstr * msg)
+{
+ ramwrite=1;
+ byteswritten=0;
+ writesink=0;
+ armsend(msg);              /* init's on current wimp message */
+ return(NULL);
+}
+
+os_error * ramclose(os_error * ep)
+{
+ os_error * err;
+
+
+ if(ramwrite) err=ramwritebuff(1);
+ else         err=NULL;
+
+ ramoff();
+
+ if(ep) return(ep);
+ else   return(err);
+}
+
+
+/* filing system behaves as normal */
+
+os_error * ramoff(void)
+{
+ ramwrite=0;
+ ramread=0;
+ return(NULL);
+}
+

@@ -1,0 +1,705 @@
+/*->c.bf */
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "os.h"
+#include "bbc.h"
+#include "h.sprite"
+#include "h.wimp"
+#include "h.werr"
+#include "h.flex"
+
+
+#include "h.wos"
+#include "h.fsx"
+#include "h.ram"
+#include "h.err"
+
+#include "h.crc"
+
+
+#include "h.bf"
+
+
+
+/* BUFFCRIT is a flag set if p has been moved outside the buffer */
+
+
+/* dump the current buffer full */
+
+os_error * bf_dump(buffer * bf)
+{
+ os_error * err;
+ int        n;
+
+ err=NULL;
+
+
+/* dprintf(6,"bf_dump in"); */
+
+ if(bf->flags & BUFFMOD)
+ {
+  if(bf->length)
+  {
+   if(bf->flags & BUFFRAM) err=ramwriten(bf->data,bf->length,&n);
+   else                    
+   {
+             err=fs_seek(bf->fh,bf->base);
+    if(!err) err=fs_write(bf->fh,bf->data,bf->length);
+   }
+  }
+  bf->flags&=~BUFFMOD;
+ }
+
+/* dprintf(6,"bf_dump out"); */
+
+ return(err);
+}
+
+
+
+/* load the current buffer from current pointer */
+
+static os_error * bf_load(buffer * bf)
+{
+ os_error * err;
+
+ if(bf->flags & BUFFRAM)
+ {
+  bf->base=bf->p;
+  err=ramreadn(bf->data,bf->size,&bf->length);
+ }
+ else
+ {
+  err=fs_seek(bf->fh,bf->p);
+  if(!err)
+  {
+   bf->base=bf->p;
+   err=fs_readn(bf->fh,bf->data,bf->size,&bf->length);
+  }
+ }
+
+ bf->flags&=~BUFFCRIT;
+
+ return(err);
+}
+
+
+static os_error * bf_init(buffer * bf)
+{
+
+/* 
+ bf->fh=0;
+ bf->p=0;
+ bf->flags=0;
+ bf->length=0;
+ bf->base=0;
+*/
+
+ memset(bf,0,sizeof(buffer));
+
+ return(NULL);
+}
+
+
+static os_error * bf_alloc(buffer * bf,int size)
+{
+ os_error * err;
+
+ err=bf_init(bf);
+
+ do
+ {
+  err=flex_alloc((flex_ptr)&bf->data,size);
+  if(!err)
+  {
+   bf->size=size;
+   break;
+  }
+  size/=2;
+ } while(size>128);
+
+ return(err);
+}
+
+
+static os_error * bf_dealloc(buffer * bf,os_error * ep)
+{
+ os_error * err;
+
+ err=flex_free((flex_ptr)&bf->data);
+
+ if(ep) return(ep);
+ else   return(err);
+}
+
+
+os_error * bf_seek(buffer * bf,int posn)
+{
+ if(posn<bf->base || posn>(bf->base+bf->length)) bf->flags|=BUFFCRIT;
+
+/*
+ if(posn>(bf->base+bf->length))
+ {
+  bf->length=bf->p-bf->base;
+  if(bf->length>bf->size) bf->length=bf->size;
+ }
+*/
+
+ bf->p=posn;
+ return(NULL);
+}
+
+
+os_error * bf_seekrel(buffer * bf,int delta)
+{
+ return(bf_seek(bf,bf->p+delta));
+}
+
+
+os_error * bf_tell(buffer * bf,int * posn)
+{
+ *posn=bf->p;
+ return(NULL);
+}
+
+
+
+os_error * bf_getc(buffer * bf,int * c)
+{
+ os_error * err;
+
+ err=NULL;
+
+ if(bf->flags & BUFFCRIT)
+ {
+  err=bf_dump(bf);
+  if(!err) err=bf_load(bf);
+ }
+
+ if(bf->p<(bf->base+bf->length))
+ {
+  *c=bf->data[bf->p-bf->base];
+  bf->p++;
+  if(bf->p>=(bf->base+bf->length)) bf->flags|=BUFFCRIT;
+ }
+ else *c=EOF;
+
+ return(err);
+}
+
+
+os_error * bf_putc(buffer * bf,int c)
+{
+ os_error * err;
+
+ err=NULL;
+
+ if(bf->flags & BUFFCRIT)
+ {
+  err=bf_dump(bf);    /* NB even if error, update pointers */
+  bf->length=0;       /* so that future putc don't crash   */
+  bf->base=bf->p;
+  bf->flags&=~BUFFCRIT;
+ }
+
+ bf->data[bf->p-bf->base]=c;
+ bf->flags|=BUFFMOD;
+ bf->p++;
+
+ if(bf->p>=(bf->base+bf->size))   bf->flags|=BUFFCRIT;
+ if(bf->p>=(bf->base+bf->length)) bf->length++;
+
+ return(err);
+}
+
+
+
+
+
+os_error * bf_readn(buffer * bf,void * b,int len,int * read)
+{
+ os_error * err;
+ char     * p;
+ int        left;
+ int        chunk;
+ int        n;
+ int        eof;
+
+ err=NULL;
+ left=len;
+ eof=0;
+ p=(char*)b;
+
+ if(left)
+ {
+  if(!(bf->flags & BUFFCRIT))
+  {
+   /* see how much we can supply from the buffer */
+
+   chunk=bf->length-(bf->p-bf->base);
+   if(chunk>0)
+   {
+    if(chunk>left) chunk=left;
+
+    memcpy(p,bf->data+(bf->p-bf->base),chunk);
+    p+=chunk;
+
+    bf->p+=chunk;
+    if(bf->p>=(bf->base+bf->length)) bf->flags|=BUFFCRIT;
+
+    left-=chunk;
+   }
+  }
+
+  if(left)
+  {
+   if(left>bf->size) /* try to read integer number of buffers direct full */
+   {
+    chunk=(left/bf->size);
+    chunk*=bf->size;
+
+    if(bf->flags & BUFFRAM)
+    {
+     err=ramreadn(p,chunk,&n);
+    }
+    else
+    {
+     err=fs_seek(bf->fh,bf->p);
+     if(!err)
+     {
+      err=fs_readn(bf->fh,p,chunk,&n);
+     }
+    }
+
+    if(n<chunk) eof=1;
+
+    p+=n;
+
+    bf->p+=n;
+    if(bf->p>=(bf->base+bf->length)) bf->flags|=BUFFCRIT;
+
+    left-=n;
+   } 
+
+   if(left && !eof && !err)
+   {
+    /* then try to fill the buffer */
+
+    if(bf->flags & BUFFCRIT) err=bf_dump(bf);
+    if(!err) err=bf_load(bf);
+
+    /* then complete the read with what is in the buffer */
+
+    if(!err)
+    {
+     chunk=bf->length-(bf->p-bf->base);
+     if(chunk>0)
+     {
+      if(chunk>left) chunk=left;
+
+      memcpy(p,bf->data+(bf->p-bf->base),chunk);
+      p+=chunk;
+
+      bf->p+=chunk;
+      if(bf->p>=(bf->base+bf->length)) bf->flags|=BUFFCRIT;
+
+      left-=chunk;
+     }
+    }
+   }
+  }
+ }
+ *read=len-left;
+ return(err);
+}
+
+
+
+os_error * bf_read(buffer * bf,void * b,int len)
+{
+ os_error * err;
+ int        n;
+ err=bf_readn(bf,b,len,&n);
+ if(!err && n!=len) err=geterror(ERD);
+ return(err);
+}
+
+
+
+os_error * bf_writen(buffer * bf,void * b,int len,int * write)
+{
+ os_error * err;
+ char     * p;
+ int        left;
+ int        chunk;
+ int        n;
+
+ err=NULL;
+ left=len;
+ p=(char*)b;
+
+
+/* dprintf(6,"bf_writen in"); */
+
+ if(left)
+ {
+  if(!(bf->flags & BUFFCRIT))
+  {
+   /* see how much we can write to the buffer */
+
+   chunk=bf->size-(bf->p-bf->base);
+   if(chunk>0)
+   {
+    if(chunk>left) chunk=left;
+
+    memcpy(bf->data+(bf->p-bf->base),p,chunk);
+    bf->flags|=BUFFMOD;
+
+    p+=chunk;
+
+    bf->p+=chunk;
+    if(bf->p>=(bf->base+bf->size))  bf->flags|=BUFFCRIT;
+    if(bf->p>(bf->base+bf->length)) bf->length=bf->p-bf->base;
+
+    left-=chunk;
+   }
+  }
+
+  if(bf->flags & BUFFCRIT)
+  {
+   err=bf_dump(bf);
+   bf->length=0;
+   bf->base=bf->p;
+   bf->flags&=~BUFFCRIT;
+  }
+
+  if(!err && left)
+  {
+   if(left>bf->size) /* try to write integer number of buffers direct full */
+   {
+    chunk=(left/bf->size);
+    chunk*=bf->size;
+
+    if(bf->flags & BUFFRAM)
+    {
+     err=ramwriten(p,chunk,&n);
+    }
+    else
+    {
+     err=fs_seek(bf->fh,bf->p);
+     if(!err)
+     {
+      err=fs_writen(bf->fh,p,chunk,&n);
+     }
+    }
+
+    p+=n;
+
+    bf->p+=n;
+    bf->length=0;
+    bf->base=bf->p;
+    bf->flags&=~BUFFCRIT;
+
+    left-=n;
+   } 
+
+   if(!err && left)
+   {
+    /* then complete the write to the buffer */
+
+    if(!err)
+    {
+     chunk=bf->size-(bf->p-bf->base);
+     if(chunk>0)
+     {
+      if(chunk>left) chunk=left;
+
+      memcpy(bf->data+(bf->p-bf->base),p,chunk);
+      bf->flags|=BUFFMOD;
+
+      p+=chunk;
+
+      bf->p+=chunk;
+      if(bf->p>=(bf->base+bf->size))  bf->flags|=BUFFCRIT;
+      if(bf->p>(bf->base+bf->length)) bf->length=bf->p-bf->base;
+
+      left-=chunk;
+     }
+    }
+   }
+  }
+ }
+
+ *write=len-left;
+
+/* dprintf(6,"bf_writen out *write=%d",*write); */
+
+ return(err);
+}
+
+
+
+os_error * bf_write(buffer * bf,void * b,int len)
+{
+ os_error * err;
+ int        n;
+ err=bf_writen(bf,b,len,&n);
+ if(!err && n!=len) err=geterror(EWR);
+ return(err);
+}
+
+
+
+os_error * bf_geti(buffer * bf,int * c)
+{
+ return(bf_read(bf,c,sizeof(int)));
+}
+
+
+os_error * bf_puti(buffer * bf,int c)
+{
+ return(bf_write(bf,&c,sizeof(int)));
+}
+
+
+os_error * bf_gets(buffer * bf,int * c)
+{
+ *c=0;
+ return(bf_read(bf,c,2));
+}
+
+
+os_error * bf_puts(buffer * bf,int c)
+{
+ return(bf_write(bf,&c,2));
+}
+
+
+os_error * bf_open(char * filename,int mode,int size,buffer * bf)
+{
+ os_error * err;
+
+ err=bf_alloc(bf,size);
+ if(!err)
+ {
+  bf->flags|=BUFFCRIT;
+
+  if(pendingramread() || pendingramwrite())
+  {
+   bf->flags|=BUFFRAM;
+  }
+  else
+  {
+   err=fs_open(filename,mode,&bf->fh);
+  }
+  if(err) err=bf_dealloc(bf,err);
+ }
+
+ return(err);
+}
+
+
+/*
+
+os_error * bf_openc(char * filename,int mode,int type,int size,buffer * bf)
+{
+ os_error * err;
+
+ err=bf_open(filename,mode,size,bf);
+ if(!err && !(bf->flags & BUFFRAM) && (mode=='w' || mode=='u'))
+                                              err=fs_settype(filename,type);
+
+ return(err);
+}
+
+*/
+
+
+
+os_error * bf_close(buffer * bf,os_error * ep)
+{
+ os_error * err;
+
+
+ err=bf_dump(bf);
+
+ if(bf->flags & BUFFRAM) err=ramclose(err);
+ else                    err=fs_close(bf->fh,err);
+
+ err=bf_dealloc(bf,err);
+
+ if(ep) return(ep);
+ else   return(err);
+}
+
+
+
+
+os_error * bf_closec(buffer * bf,os_error * ep,char * name,int type)
+{
+ os_error * err;
+
+ err=bf_close(bf,ep);
+
+ if(!err)
+ {
+  if(!(bf->flags & BUFFRAM)) err=fs_settype(name,type);
+ }
+
+ return(err);
+}
+
+
+
+
+
+os_error * bf_saveblock(char * filename,int type,void * start,int len)
+{
+ os_error * err;
+ int        n;
+
+ if(pendingramwrite())
+ {
+  err=ramwriten(start,len,&n);
+  err=ramclose(err);
+ }
+ else
+ {
+  err=fs_saveblock(filename,type,start,len);
+ }
+
+ return(err);
+}
+
+
+static int lastguess;
+static int loadfilesize;
+static int blockmode;
+
+/* guess (!) how much to read next time */
+
+os_error * bf_loadsize(int * n)
+{
+ *n=lastguess;
+ lastguess=0x1000;
+ return(NULL);
+}
+
+/* terminate block load process */
+
+os_error * bf_loadend(os_error * err)
+{
+ if(blockmode & BUFFRAM) err=ramclose(err);
+ return(err);
+}
+
+/* load data */
+
+os_error * bf_loaddata(char * name,void * b,int size,int * read,int * eof)
+{
+ os_error * err;
+
+ *eof=0;
+
+ if(blockmode & BUFFRAM)
+ {
+  err=ramreadn(b,size,read);
+  if(*read<size)
+  {
+   err=ramclose(err);
+   *eof=1;
+  }
+ }
+ else
+ {
+  if(size<loadfilesize) err=geterror(EMEM);
+  else                  err=fs_loadblock(name,b);
+  *read=loadfilesize;
+  *eof=1;
+ }
+
+ return(err);
+}
+
+
+os_error * bf_loadstart(char * name)
+{
+ os_error * err;
+ fstat      f;
+
+ blockmode=0;
+ err=NULL;
+
+ if(pendingramread())
+ {
+  if(readextent<0x100) readextent=0x100;
+  lastguess=readextent;
+  blockmode|=BUFFRAM;
+ }
+ else
+ {
+  err=fs_stat(name,&f);
+  if(!err)
+  {
+   if(!f.object) err=geterror(ENOTF);
+   else          loadfilesize=lastguess=f.length;
+  }
+ }
+
+ return(err);
+}
+
+
+
+
+#ifdef NEVER
+
+
+os_error * loadtype(int type,mousestr * m,int * method)
+{
+/* dprintf(0,"load type=%x",type); */
+ *method=1;
+ return(NULL);
+}
+
+
+
+os_error * load(char * name,int type,int xvol)
+{
+ os_error * err;
+ buffer     bf;
+ int        n;
+ int        chunk;
+ int        read;
+ int        c;
+ int        eof;
+
+/* dprintf(0,"load %s type=%d vol=%d",name,type,xvol); */
+
+ n=0;
+
+ err=bf_loadstart(name);
+ do
+ {
+  err=bf_loadsize(&chunk);
+ /* dprintf(0,"chunk=%d",chunk); */
+  err=flex_extend((flex_ptr)&p,n+chunk);
+  err=bf_loaddata(name,p+n,chunk,&read,&eof);
+ /* dprintf(0,"read=%d",read); */
+  n+=read;
+ } while(!eof);
+
+ fs_saveblock("xxx",0xFFF,p,n);
+
+ return(NULL);
+}
+
+ adddataload(-2,load);
+ adddataloadtype(-2,loadtype);
+ adddataopen(0xFFF,load);
+
+#endif

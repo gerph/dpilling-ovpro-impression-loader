@@ -1,0 +1,39 @@
+/*->h.bits */
+
+#define RISCOS310 0xA4
+
+
+extern int  cstrcmp(char * first,char * second);
+extern int  cstrncmp(char * first,char * second,int n);
+extern int  xcstrncmp(char * first,char * second,int n);
+extern int  xstrlen(char *s);
+
+
+extern void fx(int a,int x,int y);
+extern void *bnearest(const void *key,void *base,size_t nmemb,size_t size,
+                                  int (*compar)(const void *, const void *));
+
+extern int    ospresent(int os);
+
+
+extern int osversion(void);
+
+#define ISOS35  (osversion()>=0xA5)
+#define ISOS30  (osversion()>=0xA4)
+
+
+extern char * memstring(int size);
+extern char * unquotec(char * input,char * output);
+extern char * quotec(char * input,char * output);
+
+extern char * xstrcpy(char *s1, const char *s2);
+extern char * xstrncpy(char *s1,char *s2,int n);
+
+extern void   xstripstr(char * p,int len);
+extern void   xstripstr32(char * p);
+
+
+
+extern os_error * expandpath(char * path,char * buff,int buffsize);
+
+

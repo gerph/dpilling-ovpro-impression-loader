@@ -1,0 +1,287 @@
+/*->c.deb */
+
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <signal.h>
+#include <ctype.h>
+#include <time.h>
+#include <stdarg.h>
+
+#include "h.os"
+#include "h.bbc"
+#include "h.akbd"
+#include "h.wimpt"
+#include "h.wimp"
+#include "h.swis"
+
+
+#include "h.bits"
+#include "h.etc"
+
+#include "h.wos"
+
+#include "h.poll"
+
+
+#include "h.deb"
+
+
+#define isshift akbd_pollsh()
+#define isctrl  akbd_pollctl()
+
+
+
+/* #define PROD */
+
+
+#ifndef DEMO 
+
+#ifndef PROD
+
+
+static FILE * dbfp;
+
+
+#define DAPPEND 
+
+void dprintf(int line,char * format, ...)
+{
+ va_list   args;
+ char      v[512];
+ char      string[512];
+ os_regset rx;
+
+ va_start(args, format);
+ vsprintf(v, format, args);
+
+ sprintf(string,"%s$Debug",wimpt_programname());
+ if(getenv(string) || 1)
+ {
+  rx.r[0]=202;
+  rx.r[1]=0;
+  rx.r[2]=-1;
+
+  os_swix(OS_Byte,&rx);
+
+  if(!(rx.r[1] & 0x10))
+  {
+#ifdef DAPPEND
+   if(!dbfp) dbfp=fopen("xx","ab+");
+   if(dbfp)
+   {
+    fprintf(dbfp,"%s\n",v);
+    fclose(dbfp);
+    dbfp=NULL;
+   }
+#else
+   if(!dbfp) dbfp=fopen("xx","wb");
+   if(dbfp) fprintf(dbfp,"%s\n",v);
+#endif
+  }
+  else
+  {
+   bbc_vdu(4);bbc_vdu(30);
+   while(line--) bbc_vdu(10);
+   printf("%-40s",v);
+   bbc_vdu(5);
+   if(isctrl) bbc_get();
+  }
+ }
+
+ va_end(args);
+}
+
+#else
+
+void dprintf(int line,char * format, ...)
+{
+ va_list args;
+ char v[128];
+ va_start(args, format);
+ vsprintf(v, format, args);
+
+ va_end(args);
+
+ USE(line);
+}
+
+#endif
+
+#else
+
+void dprintf(int line,char * format, ...)
+{
+ va_list args;
+ char v[128];
+ va_start(args, format);
+ vsprintf(v, format, args);
+
+ va_end(args);
+}
+
+#endif
+
+
+/* in dbug mode, we use this signal handler, which gives a trace back */
+
+typedef void SignalHandler(int);
+
+static debfn debugfn;
+
+
+#ifndef PROD
+
+static void debug_handler(int sig)
+{
+ if(sig!=SIGINT || isshift)
+ {
+  if(debugfn) debugfn();
+  os_cli("*spool zz");
+  raise(SIGTERM);            /* get a precious stack backtrace! */
+  os_cli("*spool");
+  exit(0);
+ }
+ else
+ {
+  signal(SIGINT,&debug_handler);
+ }
+}
+
+
+
+
+static void debugenter(int userhandle)
+{
+ fx(229,0,0);
+ USE(userhandle);
+}
+
+
+static void debugexit(int userhandle)
+{
+ fx(229,1,0);
+ fx(224,0,0);
+ USE(userhandle);
+}
+
+
+#endif
+
+
+void debugenable(debfn xdeb)
+{
+ #ifndef PROD
+
+ char string[128];
+
+ debugfn=xdeb;
+
+ sprintf(string,"%s$Debug",wimpt_programname());
+ if(getenv(string))
+ {
+  signal(SIGSEGV,&debug_handler);
+  signal(SIGINT,&debug_handler);
+  signal(SIGFPE,&debug_handler);
+  signal(SIGILL,&debug_handler);
+  signal(SIGSTAK,&debug_handler);
+
+  signal(SIGTERM,SIG_DFL);
+
+  addpollenter(debugenter,0);
+  addpollexit(debugexit,0);
+ }
+
+ #else
+
+ USE(xdeb);
+
+ #endif
+}
+
+
+int debugactive(void)
+{
+ #ifndef PROD
+
+ char string[128];
+ sprintf(string,"%s$Debug",wimpt_programname());
+ return(getenv(string)!=NULL);
+
+ #else
+
+ return(0);
+
+ #endif
+}
+
+
+int debugactive2(void)
+{
+ #ifndef PROD
+
+ char string[128];
+ sprintf(string,"%s$Debug2",wimpt_programname());
+ return(getenv(string)!=NULL);
+
+ #else
+
+ return(0);
+
+ #endif
+}
+
+
+
+
+void lprintf(char * format, ...)
+{
+ va_list   args;
+ char      v[512];
+ char      string[512];
+ char    * p;
+ FILE    * fp;
+
+ va_start(args, format);
+ vsprintf(v, format, args);
+
+ sprintf(string,"%s$Log",wimpt_programname());
+ if((p=getenv(string))!=NULL)
+ {
+  strcpy(string,p);
+  fp=fopen(string,"ab+");
+  if(fp)
+  {
+   fprintf(fp,"%s\n",v);
+   fclose(fp);
+  }
+ }
+
+ va_end(args);
+}
+
+
+
+void lerror(char * v,os_error * err)
+{
+ FILE * fp;
+ char   string[256];
+ char * p;
+
+ if(err)
+ {
+  sprintf(string,"%s$Log",wimpt_programname());
+  if((p=getenv(string))!=NULL)
+  {
+   strcpy(string,p);
+   fp=fopen(string,"ab+");
+   if(fp)
+   {
+    fprintf(fp,"%s (%s)\n",v,err->errmess);
+    fclose(fp);
+   }
+  }
+ }
+}
+

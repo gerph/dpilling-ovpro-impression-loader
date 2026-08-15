@@ -1,0 +1,111 @@
+/*->h.poll */
+
+extern int zerotime;
+extern int keytime;
+
+typedef void (*zerofn)(int userhandle);    /* external function */
+typedef void (*pollfn)(int userhandle);   
+typedef int  (*pollmaskfn)(int userhandle,wimp_eventstr * wimpevent);
+typedef os_error * (*redrfn)(int handle,int userhandle);
+typedef os_error * (*openfn)(int handle,int userhandle,wimp_openstr * o);
+typedef os_error * (*closefn)(int handle,int userhandle);
+typedef os_error * (*ptrfn)(int handle,int userhandle,int enter);
+typedef os_error * (*clickfn)(int handle,int userhandle,wimp_mousestr * m);
+typedef os_error * (*dragfn)(int handle,int userhandle,wimp_box * box);
+typedef os_error * (*keyfn)(int handle,int userhandle,int icon,int * key);
+typedef os_error * (*caretfn)(int handle,int userhandle,int gain);
+typedef os_error * (*messfn)(wimp_msgstr * msg,int * ack);
+typedef os_error * (*ackfn)(wimp_msgstr * msg);
+typedef os_error * (*loadtypefn)(int type,mousestr * m,int userhandle,
+                                                               int * method);
+typedef os_error * (*loadnamefn)(char * leaf,char * name,int userhandle);
+typedef os_error * (*loadfn)(char * name,int type,int userhandle,int volatile);
+typedef os_error * (*loadpostfn)(int userhandle);
+typedef os_error * (*savefn)(char * name,int type);
+typedef os_error * (*intsavefn)(mousestr * m,char * name,int type);
+typedef os_error * (*saveinfofn)(int * len);
+typedef os_error * (*menufn)(int * menu);
+typedef os_error * (*prequitfn)(int userhandle,int * ack,int prequit);
+typedef os_error * (*pollwordfn)(int * address,int contents);
+typedef os_error * (*helpfn)(int handle,int userhandle,int icon,char ** p);
+
+
+extern os_error * addscheduledevent(zerofn fn,int userhandle,int delay);
+extern os_error * remscheduledevent(zerofn fn,int userhandle);
+extern os_error * addzeroevent(zerofn fn,int userhandle);
+extern os_error * remzeroevent(zerofn fn,int userhandle);
+extern os_error * addpollexit(pollfn fn,int userhandle);
+extern os_error * rempollexit(pollfn fn,int userhandle);
+extern os_error * addpollenter(pollfn fn,int userhandle);
+extern os_error * rempollenter(pollfn fn,int userhandle);
+extern os_error * addpollmask(pollmaskfn fn,int userhandle);
+extern os_error * rempollmask(pollmaskfn fn,int userhandle);
+
+extern os_error * addredrawevent(redrfn fn,int handle,int userhandle);
+extern os_error * remredrawevent(redrfn fn,int handle,int userhandle);
+extern os_error * addopenevent(openfn fn,int handle,int userhandle);
+extern os_error * remopenevent(openfn fn,int handle,int userhandle);
+extern os_error * addcloseevent(closefn fn,int handle,int userhandle);
+extern os_error * remcloseevent(closefn fn,int handle,int userhandle);
+extern os_error * addpointerevent(ptrfn fn,int handle,int userhandle);
+extern os_error * rempointerevent(ptrfn fn,int handle,int userhandle);
+extern os_error * addclickevent(clickfn fn,int handle,int userhandle);
+extern os_error * remclickevent(clickfn fn,int handle,int userhandle);
+extern os_error * startdrag(int handle,int userhandle,dragfn fn);
+extern os_error * addkeyevent(keyfn fn,int handle,int userhandle);
+extern os_error * remkeyevent(keyfn fn,int handle,int userhandle);
+extern os_error * addcaretevent(caretfn fn,int handle,int userhandle);
+extern os_error * remcaretevent(caretfn fn,int handle,int userhandle);
+extern os_error * adddataopen(int type,loadfn fn);
+extern os_error * adddataopenpost(int type,loadpostfn fn);
+extern os_error * remdataopen(int type,loadfn fn);
+extern os_error * remdataopenpost(int type,loadpostfn fn);
+extern os_error * adddataload(int handle,int userhandle,loadfn fn);
+extern os_error * adddataloadpost(int handle,int userhandle,loadpostfn fn);
+extern os_error * adddataloadtype(int handle,int userhandle,loadtypefn fn);
+extern os_error * adddataloadname(int handle,int userhandle,loadnamefn fn);
+extern os_error * remdataload(int handle,int userhandle,loadfn fn);
+extern os_error * remdataloadpost(int handle,int userhandle,loadpostfn fn);
+extern os_error * remdataloadtype(int handle,int userhandle,loadtypefn fn);
+extern os_error * remdataloadname(int handle,int userhandle,loadnamefn fn);
+extern os_error * addmenuhandler(menufn fn);
+extern os_error * addprequit(prequitfn fn,int userhandle);
+extern os_error * remprequit(prequitfn fn,int userhandle);
+
+extern os_error * addhelpevent(helpfn fn,int handle,int userhandle);
+extern os_error * remhelpevent(helpfn fn,int handle,int userhandle);
+
+extern os_error * addack(ackfn fn,int ref);
+extern os_error * addmessage(messfn fn,int message);
+extern os_error * remmessage(messfn fn,int message);
+
+extern os_error * addpollword(pollwordfn fn,int * pw);
+extern os_error * rempollword(void);
+
+extern os_error * dataloadcomplete(char * name);
+
+
+/*
+  !!! when you add facility for RISC OS 3 messages to be received
+      messages only received if you declare you want them...
+      remember this applies to ACKing of your own messages 
+
+ */
+
+extern os_error * addwimpmessages(int * mess);
+
+
+extern void       poll(void);
+extern os_error * pollinit(void);
+extern void       pollfake(wimp_eventstr * ep);
+
+extern os_error * fakedataopen(int type,char * name,int * ack);
+
+
+typedef os_error * (*eventfn)(int eventn,int userhandle,void * data,int data1);
+extern os_error * addevent(int eventn,eventfn eventf,int userhandle);
+extern os_error * remevent(int eventn,eventfn eventf,int userhandle);
+extern os_error * event(int eventn,void * data,int data1);
+
+
+

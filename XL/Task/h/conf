@@ -1,0 +1,14 @@
+/*->h.conf */
+
+
+#define CONYN  0
+#define CONDC  1
+#define CONDCS 2
+
+#define CONFORCE 0x80000000
+
+
+extern os_error * confirm(int mode,int * result,char * format, ...);
+extern void       confirmset(int docon);
+
+

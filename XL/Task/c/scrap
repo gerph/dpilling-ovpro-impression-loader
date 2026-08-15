@@ -1,0 +1,347 @@
+/*->c.scrap */
+
+
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <stdio.h>
+#include <ctype.h>
+
+#include "h.os"
+#include "h.wimp"
+#include "h.wimpt"
+#include "h.flex"
+#include "h.swis"
+
+#include "h.err"
+#include "h.sp"
+
+#include "h.fsx"
+#include "h.bits"
+
+#include "h.scrap"
+
+
+#define PROGBUFFLEN 0x100
+
+int programinstance(void)
+{
+ os_error * err;
+ os_regset  rx;
+ char       buff[PROGBUFFLEN];
+ char **    p;
+ int        count;
+ char     * name;
+
+ count=0;
+
+ rx.r[0]=0;
+
+ while(1)
+ {
+  rx.r[1]=(int)buff;
+  rx.r[2]=PROGBUFFLEN;
+
+  err=os_swix(TaskManager_EnumerateTasks,&rx);
+  if(err) break;
+
+  p=(char**)buff;
+  while(p<(char**)rx.r[1])
+  {
+   name=*(p+1);
+   if(!cstrcmp(name,wimpt_programname())) count++;
+   p+=4;
+  }
+
+  if(rx.r[0]==-1) break;
+ }
+ return(count);
+}
+
+
+#define SCRAPCHUNK (0x20*sizeof(int))
+
+
+/* holds 1 if object is in use */
+
+static unsigned int * scrapmap;
+static int            scrapn;
+static int            scrapinstance;
+static char           scrapname[12];
+static char           taskname[32];
+
+/* scrap name is <Progname$Scrap>.Progname<instance>.<dir>.<dir>.file */
+/* stored as 5 bits per filename and dir name */
+
+
+char * sc_name(int sh)
+{
+ static char name[256];
+ int    mask;
+ int    shift;
+ int    len;
+
+ sprintf(name,"<%s$Scrap>.%s%d.",taskname,scrapname,
+                                  scrapinstance);
+ len=strlen(name);
+
+ mask=0x1F;
+ shift=25;
+
+ while(shift>=0)
+ {
+  if((sh>>shift)&mask) 
+  {
+   sprintf(name+len,"%c%02d.",shift?'D':'F',(sh>>shift)&mask);
+   len+=4;
+  }
+  shift-=5;
+ }
+
+ if(name[len-1]=='.') name[len-1]=0;
+
+ return(name);
+}
+
+
+char * sc_namex(int sh)
+{
+ char   buff[256];
+ char * p;
+
+ p=sc_name(sh);
+
+ expandpath(p,buff,sizeof(buff));
+
+ strcpy(p,buff);
+
+ return(p);
+}
+
+
+
+/* scan scrap map for unused handles */
+/* else extend                       */
+
+os_error * sc_create(int * shp)
+{
+ os_error * err;
+ int        i;
+ int        sh;
+
+ err=NULL;
+
+ sh=scrapn; /* compiler */
+
+ for(i=0;i<scrapn;i++)
+ {
+  if((!(scrapmap[i>>5] & (1<<(i & 0x1F)))) && (i & 0x1F))
+  {
+   /* found an unused file handle */
+   sh=i;
+   break;
+  }
+ }
+
+ if(i>=scrapn)
+ {
+  /* extend */
+
+  err=flex_chunk((flex_ptr)&scrapmap,((scrapn+2)/32+1)*sizeof(int),SCRAPCHUNK);
+  if(!err)
+  {
+   sh=scrapn++;
+   if(!(sh & 0x1F))
+   {
+    err=fs_cdir(sc_name(sh));
+    if(!err)
+    {
+     scrapmap[sh>>5]|=(1<<(sh & 0x1F));
+     sh=scrapn++;
+    }
+   }
+  }
+ }
+
+ if(!err)
+ {
+  scrapmap[sh>>5]|=(1<<(sh & 0x1F));
+  *shp=sh;
+ }
+ return(err);
+}
+
+
+/* kill handle, then scan end of map pruning empty directories */
+
+os_error * sc_remove(int sh,os_error * err)
+{
+
+ if(scrapmap[sh>>5] & (1<<(sh & 0x1F))) scrapmap[sh>>5]^=(1<<(sh & 0x1F));
+
+ if(sh==(scrapn-1))
+ {
+  while(scrapn)
+  {
+   sh=scrapn-1;
+
+   if(!(sh & 0x1F))
+   {
+    /* remove directory */
+    fs_delete(sc_name(sh));
+    scrapn--;
+   }
+   else
+   {
+    if(scrapmap[sh>>5] & (1<<(sh & 0x1F))) break;
+    else                                   scrapn--;
+   }
+  }
+ }
+
+ return(err);
+}
+
+
+
+
+static void startcase(void)
+{
+ fs_startscan();
+}
+
+
+static os_error * nextcase(fxstat * f,int * eof,int * n)
+{
+ os_error * err;
+ char       wild[32];
+ char       dirname[128];
+ char     * p;
+ char     * q;
+
+ sprintf(dirname,"<%s$Scrap>",taskname);
+ sprintf(wild,"%s*",scrapname);
+
+ while(1)
+ {
+  err=fs_nextitem(dirname,f,wild,eof);
+  if(err)  return(err);
+  if(*eof) return(err);
+
+  q=p=f->name+strlen(scrapname);
+
+  if(isdigit(*p++))
+  {
+   while(1)
+   {
+    if(!*p) 
+    {
+     *n=atoi(q);
+     return(err);
+    }
+    if(!isdigit(*p++)) break;
+   }
+  }
+ }
+
+ return(err);
+}
+
+
+
+static int uniquecase(void)
+{
+ os_error * err;
+ fxstat     f;
+ int        eof;
+ int        n;
+ int        next;
+
+ next=0;
+
+ startcase();
+
+ while(1)
+ {
+  err=nextcase(&f,&eof,&n);
+
+  if(err) break;
+  if(eof) break;
+
+  if(n!=next) return(next);
+  else        next++;
+ }
+
+ if(err) return(scrapinstance);
+ else    return(next);
+}
+
+
+
+static int zapallcases(void)
+{
+ os_error * err;
+ fxstat     f;
+ int        eof;
+ int        n;
+
+ char       name[256];
+
+ startcase();
+
+ while(1)
+ {
+  err=nextcase(&f,&eof,&n);
+  if(err || eof) break;
+
+  sprintf(name,"<%s$Scrap>.%s",taskname,f.name);
+
+  fs_wipe(name);
+ }
+
+ return(0);
+}
+
+
+/* scrpname is a short string to form into a scrap directory name */
+/* tskname  is the name to appear in taskname$scrap               */
+/* in general tskname may not be the same as wimpt_programname()  */
+
+
+os_error * scrapinit(char * scrpname,char * tskname)
+{
+ os_error * err;
+
+ scrapn=0;
+
+ strcpy(scrapname,scrpname);
+ strcpy(taskname,tskname);
+
+ err=flex_alloc((flex_ptr)&scrapmap,SCRAPCHUNK);
+ scrapinstance=programinstance();
+
+ /* fiddling - if scrapinstance is 0 then we are only case,
+                  so can zap all scrap files.
+               if scrapinstance is >0 then we better find a scrap
+                  directory that does not exist */
+
+ if(!scrapinstance) scrapinstance=zapallcases();
+ else               scrapinstance=uniquecase();
+
+ return(err);
+}
+
+
+/* attempt to trash all scrap files in sight */
+
+
+os_error * scrapfinit(void)
+{
+ os_error * err;
+
+ err=fs_wipe(sc_name(0));
+
+ return(err);
+}
+
+

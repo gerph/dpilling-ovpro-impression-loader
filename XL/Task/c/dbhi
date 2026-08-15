@@ -1,0 +1,1679 @@
+/*->c.dbhi */
+
+
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <stdio.h>
+#include <locale.h>
+
+#include "h.os"
+#include "h.flex"
+#include "h.wimp"
+#include "h.akbd"
+
+
+#include "h.err"
+#include "h.wos"
+#include "h.temp"
+#include "h.poll"
+#include "h.key"
+#include "h.pane"
+#include "h.drag"
+#include "h.xmath"
+#include "h.mym"
+#include "h.txcb"
+
+
+#include "h.etc"
+
+
+#include "h.dbhi"
+
+
+
+/*****************************************************************************/
+                            /* Dialogue boxes */
+
+static char * tristate[4]={"soptno","soptno","soptoff","sopton"};
+
+
+static os_error * dbiconfn(int handle,int userhandle,wimp_mousestr * m);
+static os_error * dbkey(int handle,int userhandle,int icon,int * key);
+
+static os_error * dbstackclear(dboxstr * dbox,int inclusive,int ok);
+
+
+
+#define MAXPANES 8
+
+
+
+/* called when parent of pane is opened */
+
+
+static void setupdbpane(dboxstr  * dbparent,panestr * panes)
+{
+ dboxstr  * dbox;
+ int        size;
+ int        i;
+ int        x0;
+ int        x1;
+ int        y0;
+ int        y1;
+
+ size=dbparent->size;
+ x0=(dbparent->x0 & 0xFFFF);
+ x1=(dbparent->x0>>16);
+ y0=(dbparent->y1 & 0xFFFF);
+ y1=(dbparent->y1>>16);
+
+ dbox=dbparent+1;
+
+ for(i=0;i<(size-1);i++)
+ {
+  panes[i].handle=dbox->handle;
+  panes[i].xshift=(dbox->x0 & 0xFFFF)-x0;
+  panes[i].yshift=y1-(dbox->y1>>16);
+  panes[i].xshiftright=x1-(dbox->x0>>16);
+  panes[i].yshiftbottom=(dbox->y1 & 0xFFFF)-y0;
+  dbox++;
+ }
+}
+
+
+
+static os_error * dbopener(int handle,int userhandle,wimp_openstr * o)
+{
+ os_error * err;
+ panestr    panes[MAXPANES];
+
+ setupdbpane((dboxstr*)userhandle,panes);
+ err=openparent(handle,o,panes,((dboxstr*)userhandle)->size-1);
+ return(err);
+}
+
+
+
+static os_error * dbpopup(dboxstr * dbparent)
+{
+ os_error * err;
+ panestr    panes[MAXPANES];
+
+ if(dbparent->size>1)
+ {
+  setupdbpane(dbparent,panes);
+  err=popupparent(dbparent->handle,panes,dbparent->size-1);
+ }
+ else err=popup(dbparent->handle,0);
+
+ return(err);
+}
+
+
+
+/* scans the icons and updates the data structure */
+/* called when dbox is being closed               */
+
+
+static os_error * updateboxsub(dboxstr * dbox)
+{
+ os_error   * err;
+ int          i;
+ dbiconstr  * dbiconp;
+ char       * iconstring;
+ char         string[256];
+ int          newvalue;
+ int          oldvalue;
+
+ err=NULL;
+
+ dbiconp=dbox->dbicon;
+ if(dbiconp)
+ {
+  i=0;
+  while(dbiconp[i].icon>-1 && !err)
+  {
+   switch(dbiconp[i].type)
+   {
+     case   DBTRI2:
+     case    DBTRI:
+     case DBTOGGLE:
+                   break;
+
+    case  DBRADIO3:
+    case  DBRADIO2:
+     case  DBRADIO:
+                   break;
+
+     case   DBTEXT:
+     case  DBWRITE:
+    case DBWRITENC:
+                   if(dbiconp[i].data.writeable.readfn)
+                   {
+                    err=iconaddr(dbox->handle,dbiconp[i].icon,&iconstring);
+
+                    if(dbiconp[i].value) newvalue=oldvalue=*dbiconp[i].value;
+                    else                 newvalue=oldvalue=0;
+
+                    if(!err)
+                    err=dbiconp[i].data.writeable.readfn(&newvalue,iconstring);
+
+                    if(dbiconp[i].data.writeable.writefn && !err && 
+                                               dbiconp[i].type!=DBWRITENC)
+                    {  /* check if changed */
+                     err=dbiconp[i].data.writeable.writefn(oldvalue,string);
+                     if(!strcmp(iconstring,string)) newvalue=oldvalue;
+                    }
+
+                    if(dbiconp[i].value) *dbiconp[i].value=newvalue;
+                   }
+                   break;
+
+     case DBACTION:
+                   break;
+   }
+   i++;
+  }
+ }
+
+ return(err);
+}
+
+
+
+static os_error * refreshdboxsub(dboxstr * dbox,int * firstw,int * flags)
+{
+ os_error   * err;
+ int          i;
+ dbiconstr  * dbiconp;
+ char         string[256];
+ int          seenwrite;
+ int        * valuep;
+ int          value;
+ int          type;
+
+ err=NULL;
+ seenwrite=0;
+ if(firstw) *firstw=-1;
+
+ dbiconp=dbox->dbicon;
+ if(dbiconp)
+ {
+  i=0;
+  while(dbiconp[i].icon>-1)
+  {
+   switch(type=dbiconp[i].type)
+   {
+     case   DBTRI2:
+                   value=*dbiconp[i].value;
+                   writevalid(dbox->handle,dbiconp[i].icon,
+                             tristate[(value & 0x3)|
+                                      ((value>>1)&0x2)]);
+                   break;
+
+
+     case    DBTRI:
+                   writevalid(dbox->handle,dbiconp[i].icon,
+                                     tristate[(*dbiconp[i].value) & 0x3]);
+                   break;
+
+     case DBTOGGLE:
+                   selectst(dbox->handle,dbiconp[i].icon,
+                       *dbiconp[i].value & dbiconp[i].data.toggle.mask);
+                   break;
+
+     case DBRADIO3:
+                   selectst(dbox->handle,dbiconp[i].icon,
+                            (*dbiconp[i].value)&dbiconp[i].data.radio.mask);
+                   break;
+
+     case DBRADIO2:
+     case  DBRADIO:
+                   selectst(dbox->handle,dbiconp[i].icon,
+                             *dbiconp[i].value==dbiconp[i].data.radio.mask);
+                   break;
+
+     case   DBTEXT:
+     case  DBWRITE:
+    case DBWRITENC:
+                   if(dbiconp[i].data.writeable.writefn)
+                   {
+                    valuep=dbiconp[i].value;
+                    if(valuep) value=*valuep;
+                    else       value=NULL;
+                    err=dbiconp[i].data.writeable.writefn(value,string);
+                    writeicon(dbox->handle,dbiconp[i].icon,string);
+                   }
+                   if(!seenwrite && (type==DBWRITE||type==DBWRITENC))
+                   {
+                    seenwrite=1;
+                    if(firstw) *firstw=dbiconp[i].icon;
+                    if(flags)  *flags=dbiconp[i].flags;
+                   }
+                   break;
+
+
+     case DBACTION:
+                   break;
+   }
+
+
+   i++;
+  }
+ }
+
+ return(err);
+}
+
+
+
+/* we have changed a value, refresh any linked icons */
+
+static os_error * dbrefresh(int * valuep,dboxstr * dbparent)
+{
+ os_error  * err;
+ dboxstr   * dboxp;
+ dbiconstr * dbiconp;
+ int         i;
+ int         j;
+ int         size;
+ char        string[256];
+ int         value;
+
+ err=NULL;
+
+ size=dbparent->size;
+ dboxp=dbparent;
+
+
+ if(valuep)
+ {
+  for(j=0;j<size;j++)
+  {
+   dbiconp=dboxp->dbicon;
+   if(dbiconp)
+   {
+    i=0;
+    while(dbiconp[i].icon>-1)
+    {
+     if(dbiconp[i].value==valuep)
+     {
+      switch(dbiconp[i].type)
+      {
+
+       case   DBTEXT:
+       case  DBWRITE:
+      case DBWRITENC:
+                     if(dbiconp[i].data.writeable.writefn)
+                     {
+                      err=dbiconp[i].data.writeable.writefn(*valuep,string);
+                      writeicon(dboxp->handle,dbiconp[i].icon,string);
+                     }
+                     break;
+
+       case DBUPDATE:
+                     if(dbiconp[i].data.update.updatefn)
+                       err=dbiconp[i].data.update.updatefn();
+                     else
+                       wimp_set_icon_state((wimp_w)dboxp->handle,
+                 (wimp_i)dbiconp[i].icon,(wimp_iconflags)0,(wimp_iconflags)0);
+                     break;
+
+      case   DBTRACK:
+                     wimp_set_icon_state((wimp_w)dboxp->handle,
+       (wimp_i)dbiconp[i].data.slider.hdr,(wimp_iconflags)0,(wimp_iconflags)0);
+                     break;
+
+      case DBSLIDER2:
+       case DBSLIDER:
+                     wimp_set_icon_state((wimp_w)dboxp->handle,
+       (wimp_i)dbiconp[i].icon,(wimp_iconflags)0,(wimp_iconflags)0);
+                     break;
+
+       case DBTOGGLE:
+                     selectst(dboxp->handle,dbiconp[i].icon,
+                                  *valuep & dbiconp[i].data.toggle.mask);
+                     break;
+
+      case  DBRADIO3:
+                     selectst(dboxp->handle,dbiconp[i].icon,
+                            (*dbiconp[i].value)&dbiconp[i].data.radio.mask);
+                     break;
+
+      case  DBRADIO2:
+       case  DBRADIO:
+                     selectst(dboxp->handle,dbiconp[i].icon,
+                             *dbiconp[i].value==dbiconp[i].data.radio.mask);
+                     break;
+
+
+       case   DBTRI2:
+                     value=*dbiconp[i].value;
+                     writevalid(dboxp->handle,dbiconp[i].icon,
+                             tristate[(value & 0x3)|
+                                      ((value>>1)&0x2)]);
+                     break;
+
+
+       case    DBTRI:
+                     writevalid(dboxp->handle,dbiconp[i].icon,
+                                       tristate[(*dbiconp[i].value) & 0x3]);
+                     break;
+
+
+      }
+     }
+     i++;
+    }
+   }
+   dboxp++;
+  }
+ }
+
+ return(err);
+}
+
+
+os_error * dbchangevalue(int * value,dboxstr * dbox)
+{
+ return(dbrefresh(value,dbox));
+}
+
+
+/* should have flag for units text */
+
+static os_error * dbcarrot(int handle,int icon,int flags)
+{
+ return(iecarrot(handle,icon));
+
+ if(flags & DBALPHATX) return(iecarrot(handle,icon));
+ else                  return(incarrot(handle,icon));
+}
+
+
+
+os_error * dbshade(int group,int shade,dboxstr * dbparent)
+{
+ os_error  * err;
+ dboxstr   * dboxp;
+ dbiconstr * dbiconp;
+ int         i;
+ int         j;
+ int         size;
+ int         hiticon;
+ int         hitflags;
+ int         hithandle;
+ int         needmove;
+ int         chandle;
+ int         cicon;
+ char        string[256];
+ int       * valuep;
+
+ err=NULL;
+
+ hithandle=0;
+ hiticon=0;  /* compiler */
+ hitflags=0;
+ needmove=0;
+
+ findcaret(&chandle,&cicon);
+
+ if(chandle==dbparent->handle && cicon==-1) needmove=1;
+
+ size=dbparent->size;
+ dboxp=dbparent;
+
+ for(j=0;j<size;j++)
+ {
+  dbiconp=dboxp->dbicon;
+  if(dbiconp)
+  {
+   i=0;
+   while(dbiconp[i].icon>-1)
+   {
+    if(dbiconp[i].group==group)
+    {
+     if(dboxp->handle)
+     {
+      if(dbiconp[i].type==DBWRITE || dbiconp[i].type==DBWRITENC)
+      {
+       if((dboxp->handle==chandle && dbiconp[i].icon==cicon) &&
+                               (shade & (DBSHADEG|DBWRITEG)) ) needmove=1;
+
+       if(dbiconp[i].data.writeable.writefn)
+       {
+        valuep=dbiconp[i].value;
+        err=dbiconp[i].data.writeable.writefn(valuep?(*valuep):0,string);
+        writeicon(dboxp->handle,dbiconp[i].icon,string);
+       }
+       writeableiconst(dboxp->handle,dbiconp[i].icon,!(shade & DBWRITEG));
+      }
+      shadeiconst(dboxp->handle,dbiconp[i].icon,shade & DBSHADEG);
+     }
+
+     dbiconp[i].flags&=~(DBGREYED|DBNOWRITE|DBNONO|DBNOOFF);
+
+     if(shade & DBSHADEG)    dbiconp[i].flags|=DBGREYED;
+     if(shade & DBWRITEG)    dbiconp[i].flags|=DBNOWRITE;
+     if(shade & DBNONOG)     dbiconp[i].flags|=DBNONO;
+     if(shade & DBNOOFFG)    dbiconp[i].flags|=DBNOOFF;
+    }
+    i++;
+   }
+
+   i=0;
+   while(dbiconp[i].icon>-1 && !hithandle)
+   {
+    if((dbiconp[i].type==DBWRITE || dbiconp[i].type==DBWRITENC) && 
+            /* !hithandle && */ !(dbiconp[i].flags & (DBGREYED|DBNOWRITE)))
+    {
+     hithandle=dboxp->handle;
+     hiticon=dbiconp[i].icon;
+     hitflags=dbiconp[i].flags;
+    }
+
+    i++;
+   }
+
+  }
+  dboxp++;
+ }
+
+
+/* dprintf(2,"needmove=%d hithandle=%d hiticon=%d flags=%d",needmove,hithandle,hiticon,hitflags); */
+
+ if(needmove)
+ {
+  if(hithandle) err=dbcarrot(hithandle,hiticon,hitflags);
+  else          setfocus(dbparent->handle);
+ }
+
+ return(err);
+}
+
+
+/*
+
+os_error * dbsetflagbits(int group,int bits,int mask,dboxstr * dbparent)
+{
+ os_error  * err;
+ dboxstr   * dboxp;
+ dbiconstr * dbiconp;
+ int         i;
+ int         j;
+ int         size;
+
+ err=NULL;
+
+ size=dbparent->size;
+ dboxp=dbparent;
+
+ for(j=0;j<size;j++)
+ {
+  dbiconp=dboxp->dbicon;
+  if(dbiconp)
+  {
+   i=0;
+   while(dbiconp[i].icon>-1)
+   {
+    if(dbiconp[i].group==group)
+    {
+     dbiconp[i].flags&=~mask;
+     dbiconp[i].flags|=bits;
+    }
+    i++;
+   }
+  }
+  dboxp++;
+ }
+
+ return(err);
+}
+
+*/
+
+
+static os_error * dboxclosepane(dboxstr  * dbox,dboxstr * dbparent)
+{
+ os_error * err;
+
+ err=closedowncheck(dbox->handle);
+
+ err=remkeyevent(dbkey,dbox->handle,(int)dbparent);
+
+ err=remclickevent(dbiconfn,dbox->handle,(int)dbparent);
+ if(dbox->redraw) err=remredrawevent(dbox->redraw,dbox->handle,(int)dbparent);
+ remhelpevent(dbox->help,dbox->handle,dbox->template);
+
+ err=closedown(&dbox->handle);
+
+ return(err);
+}
+
+
+static os_error * dodboxclose(dboxstr * dbparent,int code); /* must be here */
+
+static os_error * dbcloser(int handle,int userhandle)
+{
+ return(dodboxclose((dboxstr*)userhandle,DBCANCEL));
+ USE(handle);
+}
+
+
+static os_error * dodboxclose(dboxstr * dbparent,int code)
+{
+ os_error * err;
+ int        size;
+ dboxstr  * dbox;
+ int        i;
+ int        smash;
+
+ err=NULL;
+
+ smash=0;
+
+ if(code==DBSMASH)
+ {
+  code=DBCANCEL;
+  smash=1;
+ }
+
+
+ {
+  dbox=dbparent;
+  size=dbparent->size;
+  for(i=0;i<size;i++)
+  {
+   if(code!=DBCANCEL)
+   {
+    err=updateboxsub(dbox);
+    if(err) break;
+   }
+
+   if(dbox->close) err=dbox->close(code);
+   if(err && code!=DBCANCEL) break;
+   dbox++;
+  }
+
+  /* smash here is wrong, should not ever be called on DBMENUs */
+  /* also DBSMASH is probably redundant                        */ 
+
+  if((code==DBCHANGE || code==DBCANCEL || (!err && code==DBOK)) && 
+                                          ((dbparent->type!=DBMENU)||smash))
+  {
+   remcloseevent(dbcloser,dbparent->handle,(int)dbparent);
+   if(size>1) err=remopenevent(dbopener,dbparent->handle,(int)dbparent);
+
+   dbox=dbparent;
+
+   dbstackclear(dbox,1,!err && code==DBOK);
+
+   for(i=0;i<size;i++)
+   {
+    dboxclosepane(dbox,dbparent);
+    dbox++;
+   }
+  }
+  else
+  if(!err && (code==DBOK || code==DBCANCEL) && dbparent->type==DBMENU) 
+                                                                  zapmenu();
+
+  /* else break; */ /* => it's either OK+error or an APPLY so get out */
+
+ }
+ return(err);
+}
+
+
+
+
+
+static dboxstr    * sliderbox;
+static dbiconstr  * slidericon;
+
+static void dbsetslider(dboxstr * dbparent,dboxstr * sliderbox,
+                                                 dbiconstr * slidericon)
+{
+ windowstr window;
+ iconstr   icon;
+ mousestr  mouse;
+ int       value;
+
+ getw(sliderbox->handle,&window);
+
+ if(slidericon->type==DBSLIDER2 || slidericon->type==DBTRACK) 
+     geti(sliderbox->handle,slidericon->data.slider.link,&icon);
+ else
+     geti(sliderbox->handle,slidericon->icon,&icon);
+ getpointer(&mouse);
+
+ value=mouse.x-window.bx-icon.ix0;
+ value=scale(value,slidericon->data.slider.max-slidericon->data.slider.min,
+                   icon.ix1-icon.ix0);
+
+
+ value+=slidericon->data.slider.min;
+ if(value>slidericon->data.slider.max) value=slidericon->data.slider.max;
+ if(value<slidericon->data.slider.min) value=slidericon->data.slider.min;
+
+ if(slidericon->data.slider.slider)value=slidericon->data.slider.slider(value);
+
+ if(value!=*slidericon->value)
+ {
+  *slidericon->value=value;
+  dbrefresh(slidericon->value,dbparent);
+ }
+}
+
+
+static void dbdragzero(int userhandle)
+{
+ dbsetslider((dboxstr*)userhandle,sliderbox,slidericon);
+}
+
+
+static os_error * dbdragend(int handle,int userhandle,wimp_box * box)
+{
+ os_error * err;
+
+ err=remzeroevent(dbdragzero,userhandle);
+
+ handle=handle;
+ box=box;
+ return(err);
+}
+
+
+static os_error * dbstartdrag(dboxstr * dboxp,dbiconstr * dbicon,
+                              dboxstr * dbparent)
+{
+ os_error  * err;
+ windowstr   window;
+ iconstr     icon;
+
+ err=getw(dboxp->handle,&window);
+ if(!err)
+ {
+  if(dbicon->type==DBSLIDER2 || dbicon->type==DBTRACK) 
+               err=geti(dboxp->handle,dbicon->data.slider.link,&icon);
+  else
+               err=geti(dboxp->handle,dbicon->icon,&icon);
+
+  if(!err) err=userdrag(dboxp->handle,window.bx+icon.ix0,window.by+icon.iy0,
+                                     window.bx+icon.ix1,window.by+icon.iy1);
+  if(!err) err=startdrag(dboxp->handle,(int)dbparent,dbdragend);
+
+  if(!err) err=addzeroevent(dbdragzero,(int)dbparent);
+ }
+ sliderbox=dboxp;
+ slidericon=dbicon;
+
+ return(err);
+}
+
+
+/* we have a DBTRACKHDR which is what gets click messages for drags     */
+/* we have a number of DBTRACK entries these have dummy icon numbers    */
+/* their hdr  fields point to this icon                                 */
+/* their link fields point to the icon which sets track limits etc.     */
+
+static os_error * dbtrackstart(dboxstr * dbox,dbiconstr * dbicon,
+                               dboxstr * dbparent,wimp_mousestr * m)
+{
+ os_error  * err;
+ dbiconstr * dbiconp;
+ iconstr     icon;
+ windowstr   window;
+ int         value;
+ int         w;
+ int         h;
+
+ err=NULL;
+
+ dbiconp=dbox->dbicon;
+
+ getw(dbox->handle,&window);
+ geti(dbox->handle,dbicon->data.slider.link,&icon);
+ h=icon.iy1-icon.iy0;
+ w=(2*h)/3;
+
+
+ if(dbiconp)
+ {
+  while(dbiconp->icon>-1)
+  {
+   if(m->i==dbiconp->data.slider.hdr)
+   {
+    value=*dbiconp->value;
+    value-=dbiconp->data.slider.min;
+    value=scale(value,icon.ix1-icon.ix0,
+                 dbiconp->data.slider.max-dbiconp->data.slider.min);
+
+    value+=window.bx+icon.ix0;
+
+
+    value-=m->x;
+    value=ABS(value);
+
+    if(value<=((w+1)/2))
+    {
+     dbstartdrag(dbox,dbiconp,dbparent);
+     break;
+    }
+   }
+   dbiconp++;
+  }
+ }
+ return(err);
+}
+
+
+
+
+
+
+static os_error * dbiconfn(int handle,int userhandle,wimp_mousestr * m)
+{
+ os_error  * err;
+ dboxstr   * dbox;
+ dboxstr   * dbparent;
+ dbiconstr * dbicon;
+ int         i;
+ int         j;
+ int         hit;
+ int         value;
+ int         oldvalue;
+ int         change;
+ int         type;
+ int         size;
+ char      * iconstring;
+ int         step;
+
+
+ err=NULL;
+ hit=0;
+
+
+
+ dbparent=(dboxstr*)userhandle;
+ size=dbparent->size;
+ dbox=dbparent;
+
+ dbstackclear(dbox,0,0);
+
+ for(i=0;i<size;i++)
+ {
+  if(dbox->handle==handle) break;
+  else                     dbox++;
+ }
+ if(i>=size) dbicon=NULL;
+ else        dbicon=dbox->dbicon;
+
+ if(dbicon)
+ {
+  i=0;
+  while(dbicon[i].icon>-1)
+  {
+   if(m->i==dbicon[i].icon && !(dbicon[i].flags & (DBGREYED|DBNOWRITE)))
+   {
+    type=dbicon[i].type;
+
+    switch(type)
+    {
+     case    DBTRI:
+                   oldvalue=value=(*dbicon[i].value) & 0x3;
+
+                   while(1)
+                   {
+                    if(m->bbits==0x1)
+                    {
+                     if(++value>0x3) value=0;
+                     if(value==0x1)  value=0x2;
+                    }
+                    else
+                    {
+                     if(--value<0)   value=0x3;
+                     if(value==0x1)  value=0x0;
+                    }
+
+                    if((dbicon[i].flags & DBNONO)  && value<=1) continue;
+                    if((dbicon[i].flags & DBNOOFF) && value==2) continue;
+                    break;
+                   }
+
+                   *dbicon[i].value&=~0x3;
+                   *dbicon[i].value|=value;
+
+                   writevalid(dbox->handle,dbicon[i].icon,
+                                         tristate[value]);
+                   if(dbicon[i].data.tristate.iconfn)
+                       err=dbicon[i].data.tristate.iconfn(handle,userhandle,m);
+                   hit=1;
+                   break;
+
+
+     case   DBTRI2:
+                   value=*dbicon[i].value;
+                   if(!(value & (0x2|0x4))) value|=0x1;
+                   else                     value^=0x1;
+                   value|=0x4;
+
+                   *dbicon[i].value=value;
+                   writevalid(dbox->handle,dbicon[i].icon,
+                              tristate[(value & 0x1)|((value>>1)&0x2)]);
+
+                   if(dbicon[i].data.tristate.iconfn)
+                       err=dbicon[i].data.tristate.iconfn(handle,userhandle,m);
+                   hit=1;
+                   break;
+
+
+     case DBTOGGLE:
+                   if(!(dbicon[i].flags & DBNOOFF))
+                   {
+                    *dbicon[i].value=
+                        *dbicon[i].value^dbicon[i].data.toggle.mask;
+                    selectst(dbox->handle,dbicon[i].icon,
+                        *dbicon[i].value & dbicon[i].data.toggle.mask);
+                   
+                    if(dbicon[i].data.toggle.iconfn)
+                        err=dbicon[i].data.toggle.iconfn(handle,userhandle,m);
+
+                    dbrefresh(dbicon[i].value,dbparent);
+                   }
+                   hit=1;
+                   break;
+
+
+     case DBRADIO3:
+                   change=0;
+                   if((*dbicon[i].value!=dbicon[i].data.radio.mask)||
+                      m->bbits==0x1)
+                   {
+                    j=0;
+
+                    if(m->bbits==0x4) /* click with select */
+                    {
+                     while(dbicon[j].icon>-1)
+                     {
+                      if(dbicon[j].type==DBRADIO3 && 
+                         dbicon[j].data.radio.rank==dbicon[i].data.radio.rank)
+                      {
+                       if((*dbicon[j].value) & dbicon[j].data.radio.mask)
+                       {
+                        deselect(dbox->handle,dbicon[j].icon);
+                       }
+                      }
+                      j++;
+                     }
+                     *dbicon[i].value=0;
+                    }
+
+                    *dbicon[i].value^=dbicon[i].data.radio.mask;
+
+                    selectst(dbox->handle,dbicon[i].icon,
+                            (*dbicon[i].value)&dbicon[i].data.radio.mask);
+                    change=1;
+                   }
+
+                   if(dbicon[i].data.radio.iconfn)
+                     err=dbicon[i].data.radio.iconfn(handle,userhandle,m);
+
+                   if(change) dbrefresh(dbicon[i].value,dbparent);
+
+                   hit=1;
+                   break;
+
+
+
+
+     case DBRADIO2:
+     case  DBRADIO:
+                   change=0;
+                   if(*dbicon[i].value!=dbicon[i].data.radio.mask)
+                   {
+                    j=0;
+
+                    while(dbicon[j].icon>-1)
+                    {
+                     if((dbicon[j].type==DBRADIO2 || dbicon[j].type==DBRADIO)&&
+                        dbicon[j].data.radio.rank==dbicon[i].data.radio.rank)
+                     {
+                      if(*dbicon[j].value==dbicon[j].data.radio.mask)
+                      {
+                       deselect(dbox->handle,dbicon[j].icon);
+                       break;
+                      }
+                     }
+                     j++;
+                    }
+
+                    *dbicon[i].value=dbicon[i].data.radio.mask;
+
+                    select(dbox->handle,dbicon[i].icon);
+                    change=1;
+                   }
+                   else
+                   if(dbicon[i].type==DBRADIO2)
+                   {
+                    *dbicon[i].value=0;
+                    deselect(dbox->handle,dbicon[i].icon);
+                    change=1;
+                   }
+
+                   if(dbicon[i].data.radio.iconfn)
+                     err=dbicon[i].data.radio.iconfn(handle,userhandle,m);
+
+                   if(change) dbrefresh(dbicon[i].value,dbparent);
+
+                   hit=1;
+                   break;
+
+     case  DBWRITE:
+    case DBWRITENC:
+                   hit=1;
+                   break;
+
+
+     case DBACTION:
+                   if(dbicon[i].data.action.action==DBOK)
+                   {
+                    if(m->bbits==0x4)  err=dodboxclose(dbparent,DBOK);
+                    else
+                    if(m->bbits==0x1)  err=dodboxclose(dbparent,DBAPPLY);
+                   }
+                   else
+                   if(dbicon[i].data.action.action==DBCANCEL)
+                   {
+                    err=dodboxclose(dbparent,DBCANCEL);
+                   }
+
+                   if(!err && dbicon[i].data.action.iconfn)
+                     err=dbicon[i].data.action.iconfn(handle,userhandle,m);
+                   hit=1;
+                   break;
+
+
+     case    DBINC:
+     case    DBDEC:
+                   value=oldvalue=*dbicon[i].value;
+
+                   j=0;
+                   while(dbicon[j].icon>-1)
+                   {
+                    if(dbicon[i].value==dbicon[j].value
+                       && (dbicon[j].type==DBTEXT ||
+                           dbicon[j].type==DBWRITE ||
+                           dbicon[j].type==DBWRITENC))
+                    {
+                     if(dbicon[j].data.writeable.readfn)
+                     {
+                      err=iconaddr(dbox->handle,dbicon[j].icon,&iconstring);
+                      dbicon[j].data.writeable.readfn(&value,iconstring);
+                     }
+                     break;
+                    }
+                    j++;
+                   }
+
+                   step=dbicon[i].data.stepbutton.step;
+                   if(isshift) step*=10;
+
+                   if((dbicon[i].type==DBINC & m->bbits==0x4) ||
+                      (dbicon[i].type==DBDEC & m->bbits==0x1))
+                   { /* do an inc operation */
+
+                    value=value+step;
+
+                    if(dbicon[i].data.stepbutton.snapfn) 
+                           value=dbicon[i].data.stepbutton.snapfn(value,step);
+
+                    if(value>dbicon[i].data.stepbutton.max)
+                                          value=dbicon[i].data.stepbutton.max;
+                   }
+                   else
+                   if((dbicon[i].type==DBDEC & m->bbits==0x4) ||
+                      (dbicon[i].type==DBINC & m->bbits==0x1))
+                   { /* do a dec operation */
+
+                    value=value-step;
+
+                    if(dbicon[i].data.stepbutton.snapfn) 
+                           value=dbicon[i].data.stepbutton.snapfn(value,-step);
+
+                    if(value<dbicon[i].data.stepbutton.min)
+                                          value=dbicon[i].data.stepbutton.min;
+                   }
+
+                   *dbicon[i].value=value;
+
+                   if(value!=oldvalue) 
+                               dbrefresh(dbicon[i].value,dbparent);
+
+                   if(!err && dbicon[i].data.stepbutton.iconfn)
+                     err=dbicon[i].data.stepbutton.iconfn(handle,userhandle,m);
+                   hit=1;
+                   break;
+
+    case DBTRACKHDR:
+                   if(m->bbits==0x40)
+                            err=dbtrackstart(dbox,&dbicon[i],dbparent,m);
+                   hit=1;
+                   break;
+
+
+    case DBSLIDER2: 
+     case DBSLIDER:
+                   if(m->bbits==0x40 || m->bbits==0x10) 
+                               err=dbstartdrag(dbox,&dbicon[i],dbparent);
+                   else
+                   if(m->bbits==0x4 || m->bbits==0x1) 
+                               dbsetslider(dbparent,dbox,&dbicon[i]);
+                   hit=1;
+                   break;
+
+      case DBECHO:
+                  {
+                   wimp_mousestr m2;
+                   m2.i=dbicon[i].data.echo.n;
+                   dbiconfn(handle,(int)dbparent,&m2);
+                   hit=1;
+                  }
+                  break;
+    }
+    break;
+   }
+   i++;
+  }
+ }
+
+ if(!hit)
+ {
+  if(dbox->click) err=dbox->click(handle,(int)dbparent,m);
+ }
+
+ return(err);
+}
+
+
+
+static os_error * dbkey(int handle,int userhandle,int icon,int * key)
+{
+ os_error    * err;
+ dboxstr     * dbox;
+ dboxstr     * dbparent;
+ dbiconstr   * dbiconp;
+ int           i;
+ int           j;
+ int           hit;
+ int           c;
+ int           cicon;
+ int           flags;
+ wimp_mousestr m;
+ char        * string;
+ int           oldvalue;
+ int           newvalue;
+ int           size;
+ int           pass;
+ int           phandle;
+ int           picon;
+
+
+ err=NULL;
+ hit=flags=0;
+ c=*key;
+
+
+ m.bbits=(wimp_bbits)0x4;
+
+                            /* scan accross panes */
+ dbparent=(dboxstr*)userhandle;
+ size=dbparent->size;
+ dbox=dbparent;
+
+ for(i=0;i<size;i++)
+ {
+  if(dbox->handle==handle) break;
+  else                     dbox++;
+ }
+
+
+ if(i>=size) dbiconp=NULL;
+ else        dbiconp=dbox->dbicon;
+
+ phandle=handle;
+ picon=icon;
+
+ for(pass=0;pass<2;pass++)
+ {
+  if(pass)
+  {
+   dbox=dbparent;
+   dbiconp=dbox->dbicon;
+   phandle=dbox->handle;
+   picon=-1;
+  }
+
+  m.w=phandle;
+
+  if(dbiconp && !pass)
+  {
+   i=0;
+   while(dbiconp[i].icon>-1)
+   {
+    if(icon==dbiconp[i].icon)
+    {
+     switch(dbiconp[i].type) 
+     {
+       case  DBWRITE:
+      case DBWRITENC:
+                     cicon=-2;
+
+                     if(c==SHFT_CLEFT || c==SHFT_TAB || c==CTRL_CLEFT) c=CLEFT;
+                     if(c==SHFT_CRIGHT || c==TAB || c==CTRL_CRIGHT) c=CRIGHT;
+                     if(c==RETURN && (dbiconp[i].flags & DBUSERETURN))c=CDOWN;
+
+                     j=i;
+
+
+                     while(1)
+                     {
+                      if(c==CLEFT)  cicon=dbiconp[j].data.writeable.left;
+                      else
+                      if(c==CRIGHT) cicon=dbiconp[j].data.writeable.right;
+                      else
+                      if(c==CUP)    cicon=dbiconp[j].data.writeable.up;
+                      else
+                      if(c==CDOWN)  cicon=dbiconp[j].data.writeable.down;
+
+
+                      if(cicon<0) break;
+
+                      /* else find the j value for cicon */
+                      j=0;
+                      while(dbiconp[j].icon>-1 && dbiconp[j].icon!=cicon) j++;
+                      if(dbiconp[j].icon!=cicon)
+                      {
+                       cicon=-1;
+                       break;
+                      }
+                      else
+                      {
+                       flags=dbiconp[j].flags;
+                       if(!(flags & (DBGREYED|DBNOWRITE))) break;
+                      }
+                     }
+
+
+                     if(cicon>-2)
+                     {
+                      /* read value if... */
+
+                      if(dbiconp[i].data.writeable.readfn)
+                      {
+                       err=iconaddr(dbox->handle,dbiconp[i].icon,&string);
+                       if(!err)
+                       {
+                        if(dbiconp[i].value)
+                        {
+                         newvalue=oldvalue=*dbiconp[i].value;
+                         err=
+                            dbiconp[i].data.writeable.readfn(&newvalue,string);
+
+                         if(!err && oldvalue!=newvalue)
+                         {
+                          *dbiconp[i].value=newvalue;
+                          dbrefresh(dbiconp[i].value,dbparent);
+                         }
+                        }
+                        else
+                        {
+                         err=dbiconp[i].data.writeable.readfn(NULL,string);
+                        }
+                       }
+                      }
+
+                      hit=1;
+                      if(cicon>-1)
+                      {
+                       err=dbcarrot(handle,cicon,flags);
+                      }
+                     }
+                     break;
+ 
+     }
+     break;
+    }
+    i++;
+   }
+  }
+
+
+
+  if(!hit) /*could not handle key through icon, so try to deal with key value*/
+  {
+   if(dbiconp)
+   {
+    i=0;
+
+    while(dbiconp[i].icon>-1)
+    {
+     switch(dbiconp[i].type) 
+     {
+       case     DBTRI:
+                      if(dbiconp[i].data.tristate.key==c)
+                      {
+                       m.i=dbiconp[i].icon;
+                       err=dbiconfn(phandle,(int)dbparent,&m);
+                       hit=1;
+                      }
+                      break;
+
+       case  DBTOGGLE:
+                      if(dbiconp[i].data.toggle.key==c)
+                      {
+                       m.i=dbiconp[i].icon;
+                       err=dbiconfn(phandle,(int)dbparent,&m);
+                       hit=1;
+                      }
+                      break;
+
+       case  DBRADIO2:
+       case   DBRADIO:
+                      if(dbiconp[i].data.radio.key==c)
+                      {
+                       m.i=dbiconp[i].icon;
+                       err=dbiconfn(phandle,(int)dbparent,&m);
+                       hit=1;
+                      }
+                      break;
+
+       case  DBACTION:
+                      if(dbiconp[i].data.action.key==c)
+                      {
+                       m.i=dbiconp[i].icon;
+                       err=dbiconfn(phandle,(int)dbparent,&m);
+                       hit=1;
+                      }
+                      break;
+
+     }
+     if(hit) break;
+     i++;
+    }
+   }
+  }
+
+
+  if(hit) *key=-1;
+  else
+  if(dbox->keypress) err=dbox->keypress(phandle,(int)dbparent,picon,key);
+
+  if(err || *key==-1) break;
+ }
+
+
+ if(!err && *key!=-1) err=txcbkey(key,handle,icon);
+
+
+ return(err);
+}
+
+
+
+
+static os_error * dboxcreatepane(dboxstr  * dboxp)
+{
+ os_error  * err;
+ windowstr   window;
+ dbiconstr * dbiconp;
+ int         i;
+
+ err=createwindow(dboxp->template,&dboxp->handle);
+ getw(dboxp->handle,&window);
+ dboxp->x0=window.x0+(window.x1<<16);
+ dboxp->y1=window.y0+(window.y1<<16);
+
+ dbiconp=dboxp->dbicon;
+
+ if(!err && dbiconp)
+ {
+  i=0;
+  while(dbiconp[i].icon>-1)
+  {
+   if(dbiconp[i].flags & DBGREYED) shadeicon(dboxp->handle,dbiconp[i].icon);
+   if(dbiconp[i].flags & DBNOWRITE) 
+                             unwriteableicon(dboxp->handle,dbiconp[i].icon);
+   i++;
+  }
+ }
+
+ return(err);
+}
+
+
+static os_error * dboxaddpane(dboxstr * dbox,int * icon,
+                                             int * flags,dboxstr * dbparent)
+{
+ os_error * err;
+
+ err=refreshdboxsub(dbox,icon,flags);
+
+ addkeyevent(dbkey,dbox->handle,(int)dbparent);
+
+ addclickevent(dbiconfn,dbox->handle,(int)dbparent);
+ if(dbox->redraw) addredrawevent(dbox->redraw,dbox->handle,(int)dbparent);
+ addhelpevent(dbox->help,dbox->handle,dbox->template);
+
+ return(err);
+}
+
+
+os_error * dbclose(dboxstr * dbparent,int code)
+{
+ return(dodboxclose(dbparent,code));
+}
+
+
+os_error * dbclear(dboxstr * dbparent)
+{
+ return((dbparent->handle)?dbclose(dbparent,DBCANCEL):NULL);
+}
+
+
+
+os_error * dboxforward(dboxstr * dbox)
+{
+ return(forward(dbox->handle,(int)dbox,dbox->size>1?dbopener:NULL));
+}
+
+
+os_error * dodbox(dboxstr * dbparent,int size)
+{
+ os_error * err;
+ int        icon;
+ int        flags;
+ int        handle;
+ int        i;
+ int        j;
+ dboxstr  * dbox;
+
+ err=NULL;
+ icon=-1;
+ handle=dbparent->handle;
+ dbparent->size=size;
+
+ if(handle)  /* it was already open */
+ {
+  dbox=dbparent;
+  handle=dbox->handle;
+
+  if(!(dbparent->flags & DBFORWARD))
+  {
+   for(i=0;i<size;i++)
+   {
+    if(icon==-1)
+    {
+     err=refreshdboxsub(dbox,&icon,&flags);
+     if(icon>=0) handle=dbox->handle;
+    }
+    else
+     err=refreshdboxsub(dbox,NULL,NULL);
+
+    dbox++;
+   }
+  }
+
+  dboxforward(dbparent);
+ }
+ else
+ {
+  dbox=dbparent;
+  for(i=0;i<size;i++)
+  {
+   err=dboxcreatepane(dbox);
+   if(err) break;
+   dbox++;
+  }
+
+  if(err)
+  {
+   dbox=dbparent;
+   for(j=0;j<i;j++)
+   {
+    closedown(&dbox->handle);
+    dbox++;
+   }
+  }
+  else
+  {
+   dbox=dbparent;
+   handle=dbox->handle;
+
+   for(i=0;i<size;i++)
+   {
+    if(icon==-1)
+    {
+     err=dboxaddpane(dbox,&icon,&flags,dbparent);
+     if(icon>=0) handle=dbox->handle;
+    }
+    else
+     err=dboxaddpane(dbox,NULL,NULL,dbparent);
+
+    if(err) break;
+    dbox++;
+   }
+
+   if(dbparent->type==DBFIX)
+   {
+    addcloseevent(dbcloser,dbparent->handle,(int)dbparent);
+
+    if(size==1)
+    {
+     err=popup(dbparent->handle,0);
+    }
+    else
+    {
+     err=addopenevent(dbopener,dbparent->handle,(int)dbparent);
+     err=dbpopup(dbparent);
+    }
+
+    if(icon!=-1) dbcarrot(handle,icon,flags);
+    else
+    if(dbparent->flags & DBGRAB) setfocus(handle);
+   }
+  }
+ }
+ return(err);
+}
+
+
+
+/* called by dbox code when it is about to close a dbox */
+
+static os_error * dbstackclear(dboxstr * dbox,int inclusive,int ok)
+{
+ dbstackstr * dbstack;
+
+ dbstack=dbox->dbstack;
+
+ while(dbstack && dbstack->dsp)
+ {
+
+  if(dbstack->dbox[dbstack->dsp-1]==dbox)
+  {
+   if(inclusive)
+   {
+    if(!((dbox->flags & DBCARETRESET) && ok))
+    {
+     wimp_set_caret_pos(&dbstack->caret[dbstack->dsp-1]);
+    }
+    dbox->dbstack=NULL;
+    dbstack->dsp--;
+   }
+   break;
+  }
+
+  dbclose(dbstack->dbox[dbstack->dsp-1],DBCANCEL);
+ }
+
+ return(NULL);
+}
+
+
+
+/* is parent in stack ?                       */
+/* NO  close everything in the stack          */
+/* YES close everything above it in the stack */
+
+
+os_error * dodboxsp(dboxstr * dbox,int size,dboxstr * parent,
+                                            dbstackstr * dbstack)
+{
+ os_error       * err;
+ wimp_caretstr    cblock;
+
+
+ err=NULL;
+
+ wimp_get_caret_pos(&cblock);
+ if(!parent) parent=dbox;
+
+ while(dbstack->dsp)
+ {
+  if(dbstack->dbox[dbstack->dsp-1]==parent) break;
+  dbclose(dbstack->dbox[dbstack->dsp-1],DBCANCEL);
+ }
+
+ if(dbox->handle && (dbox->flags & DBFORWARD)) 
+ {
+  dboxforward(dbox);
+ }
+ else
+ {
+  if(dbox->handle) dbclose(dbox,DBCANCEL);
+
+  dbox->dbstack=dbstack;
+
+  err=dodbox(dbox,size);
+
+  if(!err)
+  {
+   dbstack->dbox[dbstack->dsp]=dbox;
+   dbstack->caret[dbstack->dsp]=cblock;
+   dbstack->dsp++;
+  }
+ }
+
+ return(err);
+}
+
+
+
+os_error * dbstacksmash(dbstackstr * dbstack)
+{
+ int i;
+
+ i=DBSTACK;
+
+ while(dbstack->dsp && i--)
+ {
+  dbclose(dbstack->dbox[dbstack->dsp-1],DBCANCEL);
+ }
+
+ return(NULL);
+}
+
+
+
+
+
+
+os_error * dbchangepane(dboxstr * old,dboxstr * new,dboxstr * dbparent)
+{
+ os_error * err;
+ wimp_wstate winds;
+ windowstr   window;
+ int         w;
+ int         h;
+ int         chandle;
+ int         cicon;
+ int      *  icon;
+ int         flags;
+
+ err=findcaret(&chandle,&cicon);
+ icon=(chandle==old->handle)?&cicon:NULL;
+
+ if(!err) err=wimp_get_wind_state(old->handle,&winds);
+ if(!err) err=dboxclosepane(old,dbparent);
+ if(!err)
+ {
+  *old=*new;
+
+  err=dboxcreatepane(old);
+
+  getw(old->handle,&window);
+  w=window.x1-window.x0;
+  h=window.y1-window.y0;
+
+  if(!err) err=dboxaddpane(old,icon,&flags,dbparent); /* icon points to cicon*/
+  
+  winds.o.w=old->handle;
+  winds.o.box.x1=winds.o.box.x0+w;
+  winds.o.box.y0=winds.o.box.y1-h;
+
+  if(!err) err=wimp_open_wind(&winds.o);
+
+  if(icon)
+  {
+   if(cicon!=-1) dbcarrot(old->handle,cicon,flags);
+   else          setfocus(old->handle);
+  }
+ }
+ return(err);
+}
+
+
+os_error * dbreadvalues(dboxstr * dboxp)
+{
+ return(updateboxsub(dboxp));
+}
+
+os_error * dbwritevalues(dboxstr * dboxp)
+{
+ return(refreshdboxsub(dboxp,NULL,NULL));
+}
+
+
+
+os_error * dbchangewindow(dboxstr * old,dboxstr * new,int size)
+{
+ os_error * err;
+ wimp_wstate winds;
+ windowstr   window;
+ int         w;
+ int         h;
+
+          err=wimp_get_wind_state(old->handle,&winds);
+ if(!err) dodboxclose(old,DBCHANGE);
+ if(!err)
+ {
+  dodbox(new,size);
+
+  getw(new->handle,&window);
+  w=window.x1-window.x0;
+  h=window.y1-window.y0;
+
+  winds.o.w=new->handle;
+  winds.o.box.x1=winds.o.box.x0+w;
+  winds.o.box.y0=winds.o.box.y1-h;
+
+  if(!err) err=wimp_open_wind(&winds.o);
+ }
+
+ return(err);
+}
+
+
+

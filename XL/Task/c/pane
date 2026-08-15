@@ -1,0 +1,152 @@
+/*->c.pane */
+
+
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <stdio.h>
+#include <locale.h>
+
+#include "h.os"
+#include "h.flex"
+#include "h.wimp"
+#include "h.akbd"
+
+
+#include "h.err"
+#include "h.wos"
+#include "h.temp"
+#include "h.poll"
+#include "h.key"
+
+#include "h.etc"
+
+
+#include "h.pane"
+
+
+
+
+static os_error * openpanes(wimp_openstr * open,panestr * panes,int n)
+{
+ os_error * err;
+ wimp_openstr o;
+ int          w;
+ int          h;
+ int          i;
+ windowstr    window;
+ int          behind;
+
+ err=NULL;
+
+ behind=open->behind;
+
+ for(i=0;i<n;i++)
+ {
+  getw(panes->handle,&window);
+  w=window.x1-window.x0;
+  h=window.y1-window.y0;
+
+  window.x0=open->box.x0+panes->xshift;
+
+  if(panes->xshiftright) window.x1=open->box.x1-panes->xshiftright;
+  else                   window.x1=window.x0+w;
+
+  window.y1=open->box.y1-panes->yshift;
+
+  if(panes->yshiftbottom) window.y0=open->box.y0+panes->yshiftbottom;
+  else                    window.y0=window.y1-h;
+
+  o.w=panes->handle;
+  o.box.x0 =window.x0;
+  o.box.y0 =window.y0;   
+  o.box.x1 =window.x1;
+  o.box.y1 =window.y1;
+  o.x=window.scx;       
+  o.y=window.scy;
+               
+  o.behind=behind;
+  behind=panes->handle;
+  err=wimp_open_wind(&o);
+  if(err) break;
+  panes++;
+ }
+
+ return(err);
+}
+
+
+os_error * openparent(int handle,wimp_openstr * wopen,panestr * panes,int n)
+{
+ os_error  * err;
+ windowstr   window;
+ int         left;
+
+ err=getw(handle,&window);
+ left=(window.x0>wopen->box.x0);
+
+ err=getw(panes->handle,&window);
+ if(!(window.wflags & 0x10000) || left) openpanes(wopen,panes,n);
+ err=getw(panes->handle,&window);
+
+ if(window.bhandle==wopen->behind) wopen->behind=panes[n-1].handle;
+
+ wimp_open_wind(wopen);
+
+ if(wopen->behind==-2)
+ {
+  getw(handle,&window);
+  wopen->behind=window.bhandle;
+ }
+ openpanes(wopen,panes,n);
+
+ return(err);
+}
+
+
+os_error * popupparent(int handle,panestr * panes,int n)
+{
+ wimp_wstate wst;
+ centerwindow(&wst,handle,0);
+ return(openparent(handle,&wst.o,panes,n));
+}
+
+
+
+/* moves a window forward to the front of stack */
+
+os_error * forward(int handle,int userhandle,openfn opener)
+{
+ os_error  * err;
+ wimp_wstate wblock;
+
+ err=wimp_get_wind_state(handle,&wblock);
+ wblock.o.behind=-1;
+ if(!err) 
+ {
+  if(opener) err=opener(handle,userhandle,&wblock.o);
+  else       err=wimp_open_wind(&wblock.o);
+ }
+
+ return(err);
+}
+
+
+
+/* given x0,y1 in box, force onto screen */
+
+void coerceboxscreen(wimp_box * box,int w,int h)
+{
+ if(box->x0<0)           box->x0=0;
+ else
+ if(box->x0>(cvdu.screenx-w)) box->x0=MAX(0,cvdu.screenx-w);
+
+ if(box->y1<h)           box->y1=h;
+ else
+ if(box->y1>cvdu.screeny)     box->y1=MAX(h,cvdu.screeny);
+
+ box->x1=box->x0+w;
+ box->y0=box->y1-h;
+}
+
+

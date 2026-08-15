@@ -1,0 +1,934 @@
+;>s.math
+
+
+a1 RN 0
+a2 RN 1
+a3 RN 2
+a4 RN 3
+v1 RN 4
+v2 RN 5
+v3 RN 6
+v4 RN 7
+v5 RN 8
+v6 RN 9
+sl RN 10
+fp RN 11
+ip RN 12
+sp RN 13
+lk RN 14
+lr RN 14
+pc RN 15
+
+f0 FN 0
+f1 FN 1
+f2 FN 2
+f3 FN 3
+f4 FN 4
+f5 FN 5
+f6 FN 6
+f7 FN 7
+
+
+WriteC        * &00
+
+
+
+
+        MACRO
+        UNSIGNED_32d32 $q,$r,$n,$d
+        MOV     $q,#0           ; zero the quotient
+        MOV     $r,$n           ; set the remainder to the current value
+        MOVS    $n,$d           ; save the denominator
+        BEQ     %F08            ; divide by 0
+00
+        CMP     $d, $r, LSR #8
+        MOVLS   $d, $d, LSL #8
+        BLO     %B00
+
+        CMP     $d, $r, LSR #1
+        BHI     %F07
+        CMP     $d, $r, LSR #2
+        BHI     %F06
+        CMP     $d, $r, LSR #3
+        BHI     %F05
+        CMP     $d, $r, LSR #4
+        BHI     %F04
+        CMP     $d, $r, LSR #5
+        BHI     %F03
+        CMP     $d, $r, LSR #6
+        BHI     %F02
+        CMP     $d, $r, LSR #7
+        BHI     %F01
+00
+; not executed when falling through
+        MOVHI   $d, $d, LSR #8
+
+        CMP     $r, $d, LSL #7
+        ADC     $q, $q, $q
+        SUBCS   $r, $r, $d, LSL #7
+        CMP     $r, $d, LSL #6
+01
+        ADC     $q, $q, $q
+        SUBCS   $r, $r, $d, LSL #6
+        CMP     $r, $d, LSL #5
+02
+        ADC     $q, $q, $q
+        SUBCS   $r, $r, $d, LSL #5
+        CMP     $r, $d, LSL #4
+03
+        ADC     $q, $q, $q
+        SUBCS   $r, $r, $d, LSL #4
+        CMP     $r, $d, LSL #3
+04
+        ADC     $q, $q, $q
+        SUBCS   $r, $r, $d, LSL #3
+        CMP     $r, $d, LSL #2
+05
+        ADC     $q, $q, $q
+        SUBCS   $r, $r, $d, LSL #2
+        CMP     $r, $d, LSL #1
+06
+        ADC     $q, $q, $q
+        SUBCS   $r, $r, $d, LSL #1
+07
+        CMP     $r, $d
+        ADC     $q, $q, $q
+        SUBCS   $r, $r, $d
+        CMP     $d, $n
+        BNE     %B00
+08
+        MEND    
+        
+
+
+
+
+
+
+
+
+
+
+
+        AREA |C$$code|, CODE, READONLY
+
+
+|x$codeseg|
+
+             EXPORT fastdiv400
+             EXPORT squareroot
+             EXPORT bigsquareroot
+             EXPORT bigmul
+             EXPORT bigdiv
+             EXPORT bigadd
+             EXPORT bigsub
+             EXPORT scale
+             EXPORT scalenr
+             EXPORT ttmul 
+             EXPORT bignormalise
+
+
+; int fastdiv400(int n)     x=n/400;
+
+
+fastdiv400
+             MOVS    a4,a1
+             RSBMI   a1,a1,#0
+             MOV     a2,a1
+
+             MOV     a1,a1,LSR #6
+             ADD     a1,a1,a1,LSR #2
+             ADD     a1,a1,a2,LSR #14
+             ADD     a1,a1,a1,LSR #1
+             ADD     a1,a1,a2,LSR #20
+             ADD     a3,a2,a2,LSR #11
+             ADD     a3,a3,a3,LSR #2
+             ADD     a1,a1,a3
+
+             MOV     a1,a1,LSR #9
+
+             ADD     a3,a1,a1,LSL #3
+             ADD     a3,a3,a1,LSL #4
+             SUB     a2,a2,a3,LSL #4
+
+             CMP     a2,#400
+             ADDGE   a1,a1,#1
+             CMP     a4,#0
+             RSBMI   a1,a1,#0
+
+             MOV     pc,lk
+
+
+
+
+; *****************************************************************************
+;
+;       SquareRoot - Calculate the square root of a 32-bit number
+;         Adapted for use on radius calculations: given a 32-bit number,
+;         return the square root of input*2^16
+;           (i.e. answer scaled up by 8 places, i.e. scaled for Draw coord)
+; in:   R7 = number to squareroot
+; out:  R8 = result
+;
+; int x=squareroot(int n,int scale)  x=sqrt(n)*(1<<scale);
+; in 
+;     a1=n
+;     a2=scale
+; out
+;     a1=result
+;
+
+squareroot 
+        MOV     ip,sp
+        STMFD   sp!,{v1-v6,fp,ip,lk,pc}
+        SUB     fp,ip,#4
+
+        MOV     a3,a1
+
+        ADD     v1, a2, #16            ; result precision
+        MOV     a1, #0                 ; result=0
+        MOV     v2, #0                 ; sqdiff=0
+
+squareloop
+        MOVS    v2, v2, LSL #2         ; C:=0 (we hope!) while doing (sqdiff,
+        ORR     v2, v2, a3, LSR #30    ;   number) := (sqdiff, number) * 4
+        MOV     a3, a3, LSL #2
+
+        SBCS    v3, v2, a1, LSL #2     ; C=0 here, so try to subtract
+                                       ; result*4 +1 from sqdiff
+        MOVCS   v2, v3                 ; if successful then shift in a "1" bit
+        ADC     a1, a1, a1             ; else shift in a "0" bit
+
+        SUBS    v1, v1, #1             ; decrement loop counter
+        BNE     squareloop
+
+ LDMEA fp,{v1-v6,fp,sp,pc}
+
+
+
+
+
+; *****************************************************************************
+;
+;  BigSquareRoot - Calculate the square root of a 64-bit number
+; in:   R0,1 = number to squareroot
+; out:    R0 = result
+;
+;
+; int x=bigsquareroot(big * n)
+;
+
+
+bigsquareroot
+        MOV     ip,sp
+        STMFD   sp!,{v1-v6,fp,ip,lk,pc}
+        SUB     fp,ip,#4
+
+        LDR     a2,[a1,#0]
+        LDR     a1,[a1,#4]
+
+
+        MOV     v1, #32                ; 32 bit result
+        MOV     v2, #0                 ; result=0
+                                       ; r10,r11 form a 64-bit "sqdiff"
+        MOV     v3, #0                 ; sqdiff(hi)=0
+        MOV     v4, #0                 ; sqdiff(lo)=0
+                                       ; r8, r9 form a temp 64 bit number
+bigsquareloop
+        MOVS    v3, v3, LSL #2         ; C:=0 (we hope!) while doing (sqdiff,
+        ORR     v3, v3, v4, LSR #30    ;   number) := (sqdiff, number) * 4
+        MOV     v4, v4, LSL #2
+        ORR     v4, v4, a1, LSR #30
+        MOV     a1, a1, LSL #2
+        ORR     a1, a1, a2, LSR #30
+        MOV     a2, a2, LSL #2
+
+        SBCS    v5, v4, v2, LSL #2      ; C=0 here, so try to subtract
+        SBCS    v6, v3, #0              ; result*4 +1 from sqdiff
+        MOVCS   v3, v6                  ; if successful then shift in a "1" bit
+        MOVCS   v4, v5
+        ADC     v2, v2, v2              ; else shift in a "0" bit
+
+        SUBS    v1, v1, #1              ; decrement loop counter
+        BNE     bigsquareloop
+
+        MOV     a1, v2
+
+        LDMEA fp,{v1-v6,fp,sp,pc}
+
+
+
+; do a 64 bit multiply where one of the operands may be negative.
+; In: r7, known to be positive
+;     r0, may be negative
+; Out: r0, r1 contain r7*r0 (hi, lo)
+;
+; void bigmul(big * n,int signed,int positive)
+;  a1->bign
+;  a2=signed
+;  a3=positive
+;
+;
+
+
+bigmul 
+    MOV     ip,sp
+    STMFD   sp!,{v1-v6,fp,ip,lk,pc}
+    SUB     fp,ip,#4
+
+    ;  a2=signed
+    ;  a3=positive
+
+    EOR     a4, a2, a3
+
+    CMP     a2, #0
+    RSBMI   a2, a2, #0
+
+    CMP     a3, #0
+    RSBMI   a3, a3, #0
+
+    MOV     v1, a3, LSR #16         ; Ah
+    BIC     v2, a3, v1, LSL #16     ; Al
+    MOV     v3, a2, LSR #16         ; Bh
+    BIC     v4, a2, v3, LSL #16     ; Bl: now got all the halfwords
+
+    MUL     v5, v2, v4              ; low word: Al*Bl
+    MUL     v6, v2, v3              ; intermediate: Al*Bh
+    MUL     v2, v1, v4              ; intermediate: Ah*Bl
+    MUL     v4, v1, v3              ; high: Ah*Bh
+
+    ADDS    v5, v5, v2, LSL #16     ; lo=Al*Bl+(Ah*Bl)<<16
+    ADCS    v2, v4, v2, LSR #16     ; hi=Ah*Bh+(Ah*Bl)>>16
+    ADDS    v5, v5, v6, LSL #16     ; lo=lo+(Al*Bh)<<16
+    ADCS    v2, v2, v6, LSR #16     ; hi=hi+(Al*Bh)>>16
+
+
+    TST     a4,#&80000000
+    BEQ     bigmulx
+
+    RSBS    v5, v5, #0
+    RSC     v2, v2, #0
+
+bigmulx
+    STR     v2,[a1,#4] ; hi word 
+    STR     v5,[a1,#0] ; lo word
+
+    LDMEA fp,{v1-v6,fp,sp,pc}
+
+
+
+
+
+
+; multiply two transform values
+;
+; int ttmul(int t1,int t2);
+;
+;  a1->t1
+;  a2->r2
+;
+;  return a1*a2/0x10000
+;
+; implies we don't care about bottom 16 bits or top 16 bits
+;
+
+
+ttmul 
+    MOV     ip,sp
+    STMFD   sp!,{v1-v6,fp,ip,lk,pc}
+    SUB     fp,ip,#4
+
+    EOR     a4, a1, a2
+
+    CMP     a1, #0
+    BEQ     ttmul0
+    RSBMI   a1, a1, #0
+
+    CMP     a2, #0
+    BEQ     ttmul0
+    RSBMI   a2, a2, #0
+
+    CMP     a2, #&10000
+    BEQ     ttmul1
+
+    CMP     a1, #&10000
+    BEQ     ttmul2
+
+
+    MOV     v1, a2, LSR #16         ; Ah
+    BIC     v2, a2, v1, LSL #16     ; Al
+    MOV     v3, a1, LSR #16         ; Bh
+    BIC     v4, a1, v3, LSL #16     ; Bl: now got all the halfwords
+
+    MUL     v5, v2, v4              ; low word: Al*Bl
+    MUL     v6, v2, v3              ; intermediate: Al*Bh
+    MUL     v2, v1, v4              ; intermediate: Ah*Bl
+    MUL     v4, v1, v3              ; high: Ah*Bh
+
+;    ADDS    v5, v5, v2, LSL #16     ; lo=Al*Bl+(Ah*Bl)<<16
+;    ADCS    v2, v4, v2, LSR #16     ; hi=Ah*Bh+(Ah*Bl)>>16
+;    ADDS    v5, v5, v6, LSL #16     ; lo=lo+(Al*Bh)<<16
+;    ADCS    v2, v2, v6, LSR #16     ; hi=hi+(Al*Bh)>>16
+
+                                    ; lo=Al*Bl+(Ah*Bl)<<16+(Al*Bh)<<16
+                                    ; hi=Ah*Bh+(Ah*Bl)>>16+(Al*Bh)>>16
+                                    ; s=(lo>>16)+(hi<<16)
+                                    ; s=(Al*Bl)>>16+(Ah*Bl)+(Al*Bh)+
+                                    ; (Ah*Bh)<<16+Ah*Bl+Al*Bh
+
+
+                                    ; (Al*Bl)>>16+(Ah*Bl)+(Al*Bh)
+    ADD     a3, v2, v6
+    ADD     v5, v5, #&8000
+    ADD     a3, a3, v5, LSR #16
+    ADD     a3, a3, v4, LSL #16
+
+
+    TST     a4,#&80000000
+    RSBNE   a1, a3, #0
+    MOVEQ   a1, a3
+
+    LDMEA   fp,{v1-v6,fp,sp,pc}
+
+ttmul0
+    MOV     a1,#0
+ttmul1
+    TST     a4,#&80000000
+    RSBNE   a1, a1, #0
+    LDMEA   fp,{v1-v6,fp,sp,pc}
+ttmul2
+    TST     a4,#&80000000
+    RSBNE   a1, a2, #0
+    MOVEQ   a1,a2
+    LDMEA   fp,{v1-v6,fp,sp,pc}
+
+
+
+; extended precision division: take 64 bit number in r0(high), r1(low),
+; and return that divided by the 32 bit number in r2
+
+
+;  int bigdiv(big * n,int divider)
+;
+
+
+bigdiv
+    MOV     ip,sp
+    STMFD   sp!,{v1-v6,fp,ip,lk,pc}
+    SUB     fp,ip,#4
+
+                            ; a1->n
+                            ; a2=divider
+    LDR     a3,[a1,#4]      ; a3=hi
+    LDR     a4,[a1,#0]      ; a4=lo
+
+    EOR     lk, a3, a2
+
+    CMP     a2, #0
+    RSBMI   a2, a2, #0
+
+    CMP     a3, #0
+    BPL     bigdivp
+    RSBS    a4, a4, #0
+    RSC     a3, a3, #0
+
+bigdivp
+    ADDS    a4, a4, a2, LSR #1   ; rounded division
+    ADC     a3, a3, #0
+    MOVS    v1, a2               ; rtemp = rb
+    BEQ     bigdiv0              ; divide by zero
+
+    MOV     v2, #0               ; v2, v1 are 64 bit rtemp
+
+    MOVS    v6, a3, LSR #1       ; form ra>>1
+    MOV     v5, a4, RRX
+
+
+bigdiv1
+    CMP     v2, v6               ; CMP rtemp, ra, LSR #1
+    CMPEQ   v1, v5
+    BHI     bigdiv2
+    ADDS    v1, v1, v1
+    ADC     v2, v2, v2           ; rtemp := rtemp LSL #1
+    B       bigdiv1
+
+bigdiv2
+    MOV     v4, #0               ; the answer so far
+bigdiv3
+    SUBS    v3, a4, v1
+    SBCS    v3, a3, v2
+    ADC     v4, v4, v4
+    BCC     bigdiv4
+    SUBS    a4, a4, v1           ; SUB ra, ra, rtemp
+    SBC     a3, a3, v2
+bigdiv4
+    MOVS    v2, v2, LSR #1
+    MOV     v1, v1, RRX          ; rtemp := rtemp>>1
+    SUBS    v3, v1, a2
+    SBCS    v3, v2, #0           ; CMP rtemp, rb
+    BCS     bigdiv3
+
+
+    TST     lk, #&80000000
+    MOVEQ   a1, v4
+    RSBNE   a1, v4, #0
+
+bigdivx
+    LDMEA fp,{v1-v6,fp,sp,pc}
+
+bigdiv0
+    MOV     a1,#0
+    B       bigdivx
+
+
+; bigadd(big * n1,big * n2,big * result)
+;
+
+bigadd
+    MOV     ip,sp
+    STMFD   sp!,{v1-v6,fp,ip,lk,pc}
+    SUB     fp,ip,#4
+
+;     a1->n1
+;     a2->n2
+;     a3->result
+
+
+    LDR    v1,[a1,#0]
+    LDR    v2,[a2,#0]
+    ADDS   a4,v1,v2
+    STR    a4,[a3,#0]
+    LDR    v1,[a1,#4]
+    LDR    v2,[a2,#4]
+    ADC    a4,v1,v2
+    STR    a4,[a3,#4]
+
+    LDMEA fp,{v1-v6,fp,sp,pc}
+
+
+
+
+; bigsub(big * n1,big * n2,big * result)
+;       result=n1-n2
+
+bigsub
+    MOV     ip,sp
+    STMFD   sp!,{v1-v6,fp,ip,lk,pc}
+    SUB     fp,ip,#4
+
+;     a1->n1
+;     a2->n2
+;     a3->result
+
+
+    LDR    v1,[a1,#0]
+    LDR    v2,[a2,#0]
+    SUBS   a4,v1,v2
+    STR    a4,[a3,#0]
+    LDR    v1,[a1,#4]
+    LDR    v2,[a2,#4]
+    SBC    a4,v1,v2
+    STR    a4,[a3,#4]
+
+    LDMEA fp,{v1-v6,fp,sp,pc}
+
+
+
+
+
+; int scale(int x,int mul,int div)
+; a1=x
+; a2=mul
+; a3=div
+
+scale
+    MOV     ip,sp
+    STMFD   sp!,{v1-v6,fp,ip,lk,pc}
+    SUB     fp,ip,#4
+
+    ;  a1=signed
+    ;  a2=positive
+
+
+    EORS    lk, a2, a3   ; a2==a3, return a1
+    BEQ     scalex
+
+    EOR     lk, lk, a1
+
+    CMP     a1,a3        ; a1==a3, return a2
+    MOVEQ   a1,a2
+    BEQ     scalex
+
+
+    CMP     a1, #0
+    BEQ     scalex       ; a1==0, return a1
+    RSBMI   a1, a1, #0
+
+    CMP     a2, #0
+    BEQ     scale0       ; a2==0, return 0
+    RSBMI   a2, a2, #0
+
+    CMP     a3, #0
+    BEQ     scale0       ; a3==0, return 0
+    RSBMI   a3, a3, #0
+
+
+    MOV     v1, a2, LSR #16         ; Ah
+    BIC     v2, a2, v1, LSL #16     ; Al
+    MOV     v3, a1, LSR #16         ; Bh
+    BIC     v4, a1, v3, LSL #16     ; Bl: now got all the halfwords
+
+    MUL     v5, v2, v4              ; low word: Al*Bl
+    MUL     v6, v2, v3              ; intermediate: Al*Bh
+    MUL     v2, v1, v4              ; intermediate: Ah*Bl
+    MUL     v4, v1, v3              ; high: Ah*Bh
+
+
+    CMP     a3,#0x10000             ; take out common case of div=0x10000
+    BEQ     scale16
+
+
+    ADDS    v5, v5, v2, LSL #16     ; lo=Al*Bl+(Ah*Bl)<<16
+    ADCS    v2, v4, v2, LSR #16     ; hi=Ah*Bh+(Ah*Bl)>>16
+    ADDS    v5, v5, v6, LSL #16     ; lo=lo+(Al*Bh)<<16
+    ADCS    v2, v2, v6, LSR #16     ; hi=hi+(Al*Bh)>>16
+
+
+    ; v2 hi word
+    ; v5 lo word
+    ; a3 +ve div
+
+
+    ADDS    v5, v5, a3, LSR #1   ; rounded division
+    ADCS    v2, v2, #0
+    BEQ     scale32
+
+scale2
+
+
+    RSB     a3, a3, #0
+
+
+    ADDS        v5, v5, v5
+
+    ADCS        v2, a3, v2, LSL #1        ; 31
+    RSBCC       v2, a3, v2
+      
+    ADCS        v5, v5, v5
+    ADCS        v2, a3, v2, LSL #1        ; 30
+    RSBCC       v2, a3, v2
+
+    ADCS        v5, v5, v5
+    ADCS        v2, a3, v2, LSL #1        ; 29
+    RSBCC       v2, a3, v2
+
+    ADCS        v5, v5, v5
+    ADCS        v2, a3, v2, LSL #1        ; 28
+    RSBCC       v2, a3, v2
+    ADCS        v5, v5, v5
+    ADCS        v2, a3, v2, LSL #1        ; 27
+    RSBCC       v2, a3, v2
+    ADCS        v5, v5, v5
+    ADCS        v2, a3, v2, LSL #1        ; 26
+    RSBCC       v2, a3, v2
+    ADCS        v5, v5, v5
+    ADCS        v2, a3, v2, LSL #1        ; 25
+    RSBCC       v2, a3, v2
+    ADCS        v5, v5, v5
+    ADCS        v2, a3, v2, LSL #1        ; 24
+    RSBCC       v2, a3, v2
+    ADCS        v5, v5, v5
+    ADCS        v2, a3, v2, LSL #1        ; 23
+    RSBCC       v2, a3, v2
+    ADCS        v5, v5, v5
+    ADCS        v2, a3, v2, LSL #1        ; 22
+    RSBCC       v2, a3, v2
+    ADCS        v5, v5, v5
+    ADCS        v2, a3, v2, LSL #1        ; 21
+    RSBCC       v2, a3, v2
+    ADCS        v5, v5, v5
+    ADCS        v2, a3, v2, LSL #1        ; 20
+    RSBCC       v2, a3, v2
+    ADCS        v5, v5, v5
+    ADCS        v2, a3, v2, LSL #1        ; 19
+    RSBCC       v2, a3, v2
+    ADCS        v5, v5, v5
+    ADCS        v2, a3, v2, LSL #1        ; 18
+    RSBCC       v2, a3, v2
+    ADCS        v5, v5, v5
+    ADCS        v2, a3, v2, LSL #1        ; 17
+    RSBCC       v2, a3, v2
+    ADCS        v5, v5, v5
+    ADCS        v2, a3, v2, LSL #1        ; 16
+    RSBCC       v2, a3, v2
+    ADCS        v5, v5, v5
+    ADCS        v2, a3, v2, LSL #1        ; 15
+    RSBCC       v2, a3, v2
+    ADCS        v5, v5, v5
+    ADCS        v2, a3, v2, LSL #1        ; 14
+    RSBCC       v2, a3, v2
+    ADCS        v5, v5, v5
+    ADCS        v2, a3, v2, LSL #1        ; 13
+    RSBCC       v2, a3, v2
+    ADCS        v5, v5, v5
+    ADCS        v2, a3, v2, LSL #1        ; 12
+    RSBCC       v2, a3, v2
+    ADCS        v5, v5, v5
+    ADCS        v2, a3, v2, LSL #1        ; 11
+    RSBCC       v2, a3, v2
+    ADCS        v5, v5, v5
+    ADCS        v2, a3, v2, LSL #1        ; 10
+    RSBCC       v2, a3, v2
+    ADCS        v5, v5, v5
+    ADCS        v2, a3, v2, LSL #1        ; 9
+    RSBCC       v2, a3, v2
+    ADCS        v5, v5, v5
+    ADCS        v2, a3, v2, LSL #1        ; 8
+    RSBCC       v2, a3, v2
+    ADCS        v5, v5, v5
+    ADCS        v2, a3, v2, LSL #1        ; 7
+    RSBCC       v2, a3, v2
+    ADCS        v5, v5, v5
+    ADCS        v2, a3, v2, LSL #1        ; 6
+    RSBCC       v2, a3, v2
+    ADCS        v5, v5, v5
+    ADCS        v2, a3, v2, LSL #1        ; 5
+    RSBCC       v2, a3, v2
+    ADCS        v5, v5, v5
+    ADCS        v2, a3, v2, LSL #1        ; 4
+    RSBCC       v2, a3, v2
+    ADCS        v5, v5, v5
+    ADCS        v2, a3, v2, LSL #1        ; 3
+    RSBCC       v2, a3, v2
+    ADCS        v5, v5, v5
+    ADCS        v2, a3, v2, LSL #1        ; 2
+    RSBCC       v2, a3, v2
+    ADCS        v5, v5, v5
+    ADCS        v2, a3, v2, LSL #1        ; 1
+    RSBCC       v2, a3, v2
+    ADCS        v5, v5, v5
+    ADCS        v2, a3, v2, LSL #1        ; 0
+    RSBCC       v2, a3, v2
+    ADCS        v5, v5, v5
+
+
+scalex2
+    TST     lk, #&80000000
+    MOVEQ   a1, v5
+    RSBNE   a1, v5, #0
+
+scalex
+    LDMEA fp,{v1-v6,fp,sp,pc}
+
+scale0
+    MOV     a1,#0
+    B       scalex
+
+scale16
+    ADD     a3, v2, v6
+    ADD     v5, v5, #&8000
+    ADD     a3, a3, v5, LSR #16
+    ADD     v5, a3, v4, LSL #16
+    B       scalex2
+
+
+
+scale32
+
+ ; UNSIGNED_32d32 $q,$r,$n,$d
+
+   UNSIGNED_32d32 v2,v3,v5,a3        
+
+   MOV     v5,v2
+
+   B       scalex2
+
+
+
+
+
+
+; int scalenr(int x,int mul,int div)
+; a1=x
+; a2=mul
+; a3=div
+
+scalenr
+    MOV     ip,sp
+    STMFD   sp!,{v1-v6,fp,ip,lk,pc}
+    SUB     fp,ip,#4
+
+    ;  a1=signed
+    ;  a2=positive
+
+
+    EORS    lk, a2, a3   ; a2==a3, return a1
+    BEQ     scalex
+
+    EOR     lk, lk, a1
+
+    CMP     a1,a3        ; a1==a3, return a2
+    MOVEQ   a1,a2
+    BEQ     scalex
+
+
+    CMP     a1, #0
+    BEQ     scalex       ; a1==0, return a1
+    RSBMI   a1, a1, #0
+
+    CMP     a2, #0
+    BEQ     scale0       ; a2==0, return 0
+    RSBMI   a2, a2, #0
+
+    CMP     a3, #0
+    BEQ     scale0       ; a3==0, return 0
+    RSBMI   a3, a3, #0
+
+
+    MOV     v1, a2, LSR #16         ; Ah
+    BIC     v2, a2, v1, LSL #16     ; Al
+    MOV     v3, a1, LSR #16         ; Bh
+    BIC     v4, a1, v3, LSL #16     ; Bl: now got all the halfwords
+
+    MUL     v5, v2, v4              ; low word: Al*Bl
+    MUL     v6, v2, v3              ; intermediate: Al*Bh
+    MUL     v2, v1, v4              ; intermediate: Ah*Bl
+    MUL     v4, v1, v3              ; high: Ah*Bh
+
+
+    CMP     a3,#0x10000             ; take out common case of div=0x10000
+    BEQ     scalenr16
+
+
+    ADDS    v5, v5, v2, LSL #16     ; lo=Al*Bl+(Ah*Bl)<<16
+    ADCS    v2, v4, v2, LSR #16     ; hi=Ah*Bh+(Ah*Bl)>>16
+    ADDS    v5, v5, v6, LSL #16     ; lo=lo+(Al*Bh)<<16
+    ADCS    v2, v2, v6, LSR #16     ; hi=hi+(Al*Bh)>>16
+
+
+    ; v2 hi word
+    ; v5 lo word
+    ; a3 +ve div
+
+    BEQ     scale32
+    B       scale2
+
+
+
+scalenr16
+    ADD     a3, v2, v6
+    ADD     a3, a3, v5, LSR #16
+    ADD     v5, a3, v4, LSL #16
+    B       scalex2
+
+
+
+
+
+
+; void normalise(big * top,big * bot)
+; passed 2 big numbers, scale them back to standard ints
+; return in hi numbers
+
+
+bignormalise
+    MOV     ip,sp
+    STMFD   sp!,{v1-v6,fp,ip,lk,pc}
+    SUB     fp,ip,#4
+
+;     a1->top
+;     a2->bot
+
+
+    LDR    v1,[a1,#4]     ; v1==top hi
+    LDR    v2,[a1,#0]
+    LDR    v3,[a2,#4]
+    LDR    v4,[a2,#0]
+
+    MOV    a3,#0
+
+normloop
+
+    CMN    v3,#1
+    BNE    norm1
+
+    MOVS   v4,v4
+    BMI    normtest2
+    B      normalise
+
+norm1
+    CMP    v3,#0
+    BNE    normalise
+    MOVS   v4,v4
+    BMI    normalise
+
+normtest2
+    CMP    a3,#0
+    MOVEQ  a3,v4
+    MOVEQ  a4,#0
+
+
+normtest3
+    CMN    v1,#1
+    BNE    norm2
+
+    MOVS   v2,v2
+    BMI    normalised
+    B      normalise
+
+norm2
+    CMP    v1,#0
+    BNE    normalise
+    MOVS   v2,v2
+    BPL    normalised
+
+
+normalise
+
+    MOVS   v1,v1,ASR#1
+    MOV    v2,v2,RRX
+
+    MOVS   v3,v3,ASR#1
+    MOV    v4,v4,RRX
+
+    ADD    a4,a4,#1
+
+    B      normloop
+
+
+normalised
+
+;  a4=shifts past 32 bits for bottom
+;  a3=32 bit bottom
+;  multiply top by (bottom & ~ (1<<shift)-1)/bottom
+
+
+    STR    v4,[a2,#4]
+
+    MOV    v1,a1
+
+    MOV    a1,v2
+    MOV    a2,v4,ASL a4
+;          a3=max 32 bit exact value
+;   assert a3 is not zero
+
+
+    CMP    a4,#0
+    CMPNE  a2,a3
+
+    BLNE   scale
+
+    STR    a1,[v1,#4]
+
+normx
+    LDMEA fp,{v1-v6,fp,sp,pc}
+
+
+    LTORG
+
+    AREA |C$$data|
+
+
+|x$dataseg|
+
+    END

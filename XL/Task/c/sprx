@@ -1,0 +1,287 @@
+/*->c.sprx */
+
+
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <stdio.h>
+
+
+#include "h.os"
+
+
+#include "h.flex"
+#include "h.alloc"
+#include "h.sprite"
+
+#include "h.bits"
+#include "h.fsx"
+#include "h.bf"
+
+
+#include "h.sprx"
+
+
+
+
+int palentriestab[4]={2,4,16,16};
+
+
+void genpalette(int ln2bpp,int * palentries,int * paltab)
+{
+ *palentries=palentriestab[ln2bpp];
+
+ if(ln2bpp==3)
+ {
+  paltab[0]=0x0;
+  paltab[1]=0x10101000;
+  paltab[2]=0x20202000;
+  paltab[3]=0x30303000;
+  paltab[4]=0x4000;
+  paltab[5]=0x10105000;
+  paltab[6]=0x20206000;
+  paltab[7]=0x30307000;
+  paltab[8]=0x40000000;
+  paltab[9]=0x50101000;
+  paltab[10]=0x60202000;
+  paltab[11]=0x70303000;
+  paltab[12]=0x40004000;
+  paltab[13]=0x50105000;
+  paltab[14]=0x60206000;
+  paltab[15]=0x70307000;
+ }
+ else
+ if(ln2bpp==2)
+ {
+  paltab[0]=0xffffff00;
+  paltab[1]=0xdddddd00;
+  paltab[2]=0xbbbbbb00;
+  paltab[3]=0x99999900;
+  paltab[4]=0x77777700;
+  paltab[5]=0x55555500;
+  paltab[6]=0x33333300;
+  paltab[7]=0x00000000;
+  paltab[8]=0x99440000;
+  paltab[9]=0x00eeee00;
+  paltab[10]=0x00cc0000;
+  paltab[11]=0x0000dd00;
+  paltab[12]=0xbbeeee00;
+  paltab[13]=0x00885500;
+  paltab[14]=0x00bbff00;
+  paltab[15]=0xffbb0000;
+ }
+ else
+ if(ln2bpp==1)
+ {
+  paltab[0]=0xffffff00;
+  paltab[1]=0xdddddd00;
+  paltab[2]=0x99999900;
+  paltab[3]=0x00000000;
+ }
+ else
+ {
+  paltab[0]=0xffffff00;
+  paltab[1]=0x00000000;
+ }
+}
+
+
+
+/* generate a greyscale palette */
+
+void gengreypal(int ln2bpp,int * palentries,int * paltab)
+{
+ int i;
+ int palw;
+
+ *palentries=(1<<(1<<ln2bpp));
+
+ switch(ln2bpp)
+ {
+  case 0:
+         paltab[0]=0;
+         paltab[1]=0xFFFFFF00;
+         break;
+
+  case 1:
+         paltab[0]=0;
+         paltab[1]=0x55555500;
+         paltab[2]=0xAAAAAA00;
+         paltab[3]=0xFFFFFF00;
+         break;
+
+  case 2:
+         for(i=0;i<16;i++)
+         {
+          palw=(i<<28)|(i<<24)|(i<<20)|(i<<16)|(i<<12)|(i<<8);
+          paltab[i]=palw;
+         }
+         break;
+
+  case 3:
+         for(i=0;i<256;i++)
+         {
+          palw=(i<<24)|(i<<16)|(i<<8);
+          paltab[i]=palw;
+         }
+         break;
+ }
+}
+
+
+
+static char dpitab[]={0,180,90,60,45,22};
+
+static int xln2(int x)
+{
+ int n;
+ n=0;
+ while(x>1) {x=x>>1;n++;}
+ return(n);
+}
+
+
+static int makemode(int obpp,int deltax,int deltay)
+{
+ int prmode;
+ int sxdpi;
+ int sydpi;
+
+ if(obpp>8)
+ {
+  if(deltax) sxdpi=180/deltax;
+  else       sxdpi=180;
+
+  if(deltay) sydpi=180/deltay;
+  else       sydpi=180;
+
+  prmode=1+(sxdpi<<1)+(sydpi<<14);
+  if(obpp==16) prmode|=(5<<27);
+  else         prmode|=(6<<27);
+ }
+ else
+ if(deltax==deltay) /* square */
+ {
+  if(obpp==8) prmode=28;
+  else
+  if(obpp==4) prmode=27;
+  else
+  if(obpp==2) prmode=26;
+  else        prmode=25;
+ }
+ else               /* rect */
+ {
+  if(obpp==8) prmode=15;
+  else
+  if(obpp==4) prmode=12;
+  else
+  if(obpp==2) prmode=4;
+  else        prmode=0;
+ }
+
+ return(prmode);
+}
+
+
+static int eigenfromdelta(int delta)
+{
+ int eigen;
+
+ if(delta==1) eigen=0;
+ else
+ if(delta==2) eigen=1;
+ else
+ if(delta==4) eigen=2;
+ else
+ if(delta==8) eigen=3;
+ else         eigen=1;
+
+ return(eigen);
+}
+
+
+int makemode2(int obpp,int deltax,int deltay,int modeflags,int ncolours,int haspalette)
+{
+ newsprite_header hdr;
+ newsprite_header nhdr;
+
+ hdr.selector.bbcmode=makemode(obpp,deltax,deltay);
+
+ if((modeflags & (3<<12))==0)
+ {
+  if(modeflags & (1<<14))
+  {
+   nhdr.selector.bbcmode=hdr.selector.bbcmode;
+   nhdr.selector.type5.alpha=0;
+   nhdr.selector.type5.reserved3=0xF;
+   nhdr.selector.type5.type=hdr.selector.type.type;
+   nhdr.selector.type5.reserved2=0;
+   nhdr.selector.type5.flags=(modeflags>>8)&0xFF;
+   nhdr.selector.type5.yeigen=eigenfromdelta(deltay);
+   nhdr.selector.type5.xeigen=eigenfromdelta(deltax);
+   nhdr.selector.type5.reserved1=0;
+   nhdr.selector.type5.new=1;
+   hdr.selector.bbcmode=nhdr.selector.bbcmode;
+  }
+ }
+
+
+ if(obpp<=8 && ISOS35 && !haspalette)
+ {
+  hdr.selector.type.xdpi=dpitab[deltax];
+  hdr.selector.type.ydpi=dpitab[deltay];
+  hdr.selector.type.new=1;
+  hdr.selector.type.alpha=0;
+  hdr.selector.type.type=xln2(obpp)+1;
+ }
+
+ return(hdr.selector.bbcmode);
+}
+
+
+
+void genpal256(int * paltab,int spbpp,int * palentriesp)
+{
+ int          palentries;
+ unsigned int c1;
+ int          target;
+ int          pal2[16];
+ int          i;
+
+ palentries=*palentriesp;
+
+ if(spbpp==3 && (palentries==64 || palentries==16))
+ {
+  for(i=0;i<16;i++)
+  {
+   if(palentries==64) pal2[i]=paltab[i+48];
+   else               pal2[i]=paltab[i];
+  }
+
+  for(target=255;target>=0;target--)
+  {
+   c1=pal2[target & 0xF];
+
+   if(target & 0x10) c1|=0x8000;
+   else              c1&=~0x8000;
+
+   if(target & 0x20) c1|=0x400000;
+   else              c1&=~0x400000;
+
+   if(target & 0x40) c1|=0x800000;
+   else              c1&=~0x800000;
+
+   if(target & 0x80) c1|=0x80000000;
+   else              c1&=~0x80000000;
+
+   c1&=0xF0F0F000;
+   c1|=(c1>>4)&0xF0F0F00;
+
+   paltab[target]=c1;
+  }
+
+  *palentriesp=256;
+ }
+}
+
+

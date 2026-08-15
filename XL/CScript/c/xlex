@@ -1,0 +1,751 @@
+/*->c.xlex  */
+
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <signal.h>
+#include <ctype.h>
+#include <time.h>
+#include <locale.h>
+
+
+#include "h.os"
+#include "h.wimp"
+#include "h.bbc"
+#include "h.flex"
+
+#include "h.bf"
+#include "h.etc"
+
+#include "h.xext"
+#include "h.xint"
+
+
+
+
+
+
+
+/*****************************************************************************/
+/* lex analyser - read through file and feed back tokens */
+
+#define LEXBUFFSIZE 0x1000
+
+
+char * tokstart;
+static char * tokend;
+static char * buffend;
+
+/*
+char   buff[LEXBUFFSIZE+1];
+ */
+
+static char * buff;
+
+static buffer lexbf;
+
+static int    lexeof;
+int    lexn;
+
+int    current;
+
+static int    savedchar;
+static int    savech;
+
+int    lexline;
+
+char * lexfile;
+
+
+char * lexnames[LEXMAX]=
+{
+ "eof",     /* TEOF      0x101     */
+ "string",  /* TCSTRING  0x102     */
+ "id",      /* TID       0x103     */
+ "number",  /* TNUMBER   0x104     */
+ "comment", /* TCOMMENT  0x105     */
+ "!=",      /* TNE       0x106  != */
+ "%=",      /* TQE       0x107  %= */
+ "&&",      /* TAA       0x108  && */
+ "&=",      /* TAE       0x109  &= */
+ "*/",      /* TCE       0x10A   * / */
+ "*=",      /* TTE       0x10B   *= */
+ "++",      /* TPP       0x10C   ++ */
+ "+=",      /* TPE       0x10D   += */
+ "--",      /* TMM       0x10E   -- */
+ "-=",      /* TME       0x10F   -= */
+ "/*",      /* TCS       0x110  comment start */
+ "//",      /* TSS       0x111  slash slash   */
+ "/=",      /* TSE       0x112   /= */
+ "<<",      /* TSL       0x113   << */
+ "<=",      /* TLE       0x114   <= */
+ "==",      /* TEQ       0x115   == */
+ ">=",      /* TGE       0x116   >= */
+ ">>",      /* TSR       0x117   >> */
+ "^=",      /* TXE       0x118   ^= */
+ "|=",      /* TBE       0x119   |= */
+ "||",      /* TBB       0x11A   || */
+ "~=",      /* T2E       0x11B   ~= */
+ "NULL",    /* TNULL     0x11C     */
+ "break",   /* TBREAK    0x11D     */
+ "case",    /* TCASE     0x11E     */
+ "const",   /* TCONST    0x11F     */
+ "continue",/* TCONTINUE 0x120     */
+ "default", /* TDEFAULT  0x121     */
+ "do",      /* TDO       0x122     */
+ "double",  /* TDOUBLE   0x123     */
+ "else",    /* TELSE     0x124     */
+ "enum",    /* TENUM     0x125     */
+ "extern",  /* TEXTERN   0x126     */
+ "float",   /* TFLOAT    0x127     */
+ "for",     /* TFOR      0x128     */
+ "goto",    /* TGOTO     0x129     */
+ "if",      /* TIF       0x12A     */
+ "int",     /* TINT      0x12B     */
+ "return",  /* TRETURN   0x12C     */
+ "static",  /* TSTATIC   0x12D     */
+ "string",  /* TSTRING   0x12E     */
+ "struct",  /* TSTRUCT   0x12F     */
+ "switch",  /* TSWITCH   0x130     */
+ "typedef", /* TTYPEDEF  0x131     */
+ "void",    /* TVOID     0x132     */
+ "volatile",/* TVOLATILE 0x133     */
+ "while",   /* TWHILE    0x134     */
+ "<<=",     /* TSLE      0x135     */
+ ">>="      /* TSRE      0x136     */
+};
+
+
+
+char * lexstring(int token)
+{
+ static char temp[8];
+
+ if(token>=LEXBASE && token<(LEXBASE+LEXMAX)) return(lexnames[token-LEXBASE]);
+
+ *temp=token;
+ *(temp+1)=0;
+
+ return(temp);
+}
+
+
+
+
+
+
+
+
+/* fill up lex buffer */
+/* copy stuff from tokstart to buffend down to buff */
+/* fill buffer */
+
+static os_error * lexfill(void)
+{
+ os_error * err;
+ int n;
+ int m;
+
+ m=tokstart-buff;
+ tokend-=m;
+
+ n=buffend-tokstart;
+ memmove(buff,tokstart,n);
+ tokstart=buff;
+ buffend=buff+n;
+
+ m=LEXBUFFSIZE-n;
+
+ err=bf_readn(&lexbf,buff+n,m,&n);
+ buffend+=n;
+ lexeof=n<m;
+
+ return(err);
+}
+
+
+
+
+
+static int skipspace(void)
+{
+ int ch;
+
+ while(1)
+ {
+  if(tokstart>=buffend)
+  {
+   if(lexeof) return(TEOF);
+   else       lexfill();
+  }
+
+  ch=*tokstart;
+  if(ch=='\n') lexline++;
+  if(!isspace(ch)) return(ch);
+  tokstart++;
+ }
+}
+
+
+
+
+static int getstring(void)
+{
+ int ch;
+ char * w;
+ int  state;
+ int  offset;
+
+ w=tokend=++tokstart;
+ state=0;
+
+ while(1)
+ {
+  if(tokend>=buffend)                 /* skip first " */
+  {
+   offset=w-tokstart;
+   if(lexeof) return(TEOF);
+   else       lexfill();
+   w=tokstart+offset;
+  }
+
+  ch=*tokend++;
+
+  if(state==0)
+  {
+   if(ch=='"')
+   {
+    *w=0;
+    return(TCSTRING);
+   }
+   else
+   if(ch=='\\') state=1;
+   else         *w++=ch;
+  }
+  else
+  if(state==1)
+  {
+   if(ch=='n') ch='\n';
+   else
+   if(ch=='r') ch='\r';
+   else
+   if(ch=='t') ch='\t';
+   else
+   if(ch=='f') ch='\f';
+   else
+   if(ch=='v') ch='\v';
+   *w++=ch;
+   state=0;
+  }
+ }
+}
+
+
+
+
+typedef struct ktag
+{
+ char * name;
+ int    token;
+} ktag;
+
+
+static ktag keytab[25]=
+{
+ "NULL",      TNULL,
+ "break",     TBREAK,
+ "case",      TCASE,
+ "const",     TCONST,
+ "continue",  TCONTINUE,
+ "default",   TDEFAULT,
+ "do",        TDO,
+ "double",    TDOUBLE,
+ "else",      TELSE,
+ "enum",      TENUM,
+ "extern",    TEXTERN,
+ "float",     TFLOAT,
+ "for",       TFOR,
+ "goto",      TGOTO,
+ "if",        TIF,
+ "int",       TINT,
+ "return",    TRETURN,
+ "static",    TSTATIC,
+ "string",    TSTRING,
+ "struct",    TSTRUCT,
+ "switch",    TSWITCH,
+ "typedef",   TTYPEDEF,
+ "void",      TVOID,
+ "volatile",  TVOLATILE,
+ "while",     TWHILE
+};
+
+
+
+static int keyword(void)
+{
+ int     lo;
+ int     hi;
+ int     probe;
+ int     code;
+ char *  keyword;
+ 
+
+ lo=0;
+ hi=(sizeof(keytab)/sizeof(ktag))-1;
+
+ while(1)
+ {
+  probe=(lo+hi)/2;
+  keyword=keytab[probe].name;
+  code=strcmp(keyword,tokstart);
+
+  if(!code)
+  {
+   code=keytab[probe].token;
+   return(code);
+  }
+  if(code>0) hi=probe-1;
+  else       lo=probe+1;
+
+  if(lo>hi) break;
+ }
+
+ return(TID);
+}
+
+
+
+static int getid(void)
+{
+ int ch;
+
+ tokend=tokstart;
+
+ while(1)
+ {
+  if(++tokend>=buffend)         
+  {
+   if(lexeof) return(TEOF);
+   else       lexfill();
+  }
+
+  ch=*tokend;
+
+  if(!isalnum(ch) && ch!='_')
+  {
+   savech=ch;
+   savedchar=1;
+   *tokend=0;
+   return(keyword());
+  }
+ }
+}
+
+
+
+
+static int getnumber(void)
+{
+ int ch;
+ int state;
+
+ tokend=tokstart;
+ lexn=0;
+ state=0;
+
+ while(1)
+ {
+  ch=*tokend;
+
+  if(state==0 && ch=='0')
+  {
+   state=1;
+  }
+  else
+  if(state==2 || state==0) /* accumulating Dec. */
+  {
+   state=2;
+   if(!isdigit(ch)) return(TNUMBER);
+   else             lexn=lexn*10+ch-'0';
+  }
+  else
+  if(state==4 || state==1) /* accumulating oct */
+  {
+   if(ch>='0' && ch<='8') 
+   {
+    state=4;
+    lexn=(lexn<<3)+ch-'0';
+   }
+   else 
+   if((ch=='x' || ch=='X') && state==1) state=5;
+   else                                 return(TNUMBER);
+  }
+  else
+  if(state==5) /* accumulating hex */
+  {
+   ch=toupper(ch);
+   if(ch>='0' && ch<='9') lexn=(lexn<<4)+ch-'0';
+   else
+   if(ch>='A' && ch<='F') lexn=(lexn<<4)+ch-'A'+10;
+   else                   return(TNUMBER);
+  }
+
+  if(++tokend>=buffend)     
+  {
+   if(lexeof) return(TEOF);
+   else       lexfill();
+  }
+ }
+}
+
+
+
+/* looking for 'x' things */
+
+static int chconst(void)
+{
+ int val;
+ int ch;
+ int state=0;
+
+ while(1)
+ {
+  if(tokend>=buffend)  
+  {
+   if(lexeof) return(TEOF);
+   else       lexfill();
+  }
+
+  ch=*tokend++;
+
+  if(state==0)
+  {
+   if(ch=='\\') state=2;
+   else
+   {
+    val=ch;
+    state=1;
+   }
+  }
+  else
+  if(state==1)
+  {
+   if(ch=='\'') break;
+  }
+  else
+  if(state==2)
+  {
+   if(ch=='n') val='\n';
+   else
+   if(ch=='r') val='\r';
+   else
+   if(ch=='t') val='\t';
+   else
+   if(ch=='f') val='\f';
+   else
+   if(ch=='v') val='\v';
+   else
+               val=ch;
+   state=1;
+  }
+ }
+
+ lexn=val;
+ return(TNUMBER);
+}
+
+
+
+
+static int getbigcomment(void)
+{
+ int ch;
+ int lc;
+
+
+ lc=-1;
+
+ while(1)
+ {
+  if(tokend>=buffend)  
+  {
+   if(lexeof) return(TEOF);
+   else       lexfill();
+  }
+  lc=ch;
+  ch=*tokend++;
+  if(ch=='/' && lc=='*') break;
+  else
+  if(ch=='\n') lexline++;
+ }
+ return(TCOMMENT);
+}
+
+
+static int getsmlcomment(void)
+{
+ int ch;
+
+ while(1)
+ {
+  if(tokend>=buffend)        
+  {
+   if(lexeof) return(TEOF);
+   else       lexfill();
+  }
+  ch=*tokend++;
+  if(ch=='\n' || ch=='\r')
+  {
+   if(ch=='\n') lexline++;
+   break;
+  }
+ }
+ return(TCOMMENT);
+}
+
+
+
+
+
+/* these pairs are in increasing order */
+
+#define PAIR(a,b) (((a)<<8)+b)
+
+static int twintab[22][2]=
+{
+ PAIR('!','='),TNE,
+ PAIR('%','='),TQE,
+
+ PAIR('&','&'),TAA,
+ PAIR('&','='),TAE,
+
+ PAIR('*','/'),TCE,
+ PAIR('*','='),TTE,
+
+ PAIR('+','+'),TPP,
+ PAIR('+','='),TPE,
+
+ PAIR('-','-'),TMM,
+ PAIR('-','='),TME,
+
+ PAIR('/','*'),TCS,
+ PAIR('/','/'),TSS,
+ PAIR('/','='),TSE,
+
+ PAIR('<','<'),TSL,
+ PAIR('<','='),TLE,
+
+ PAIR('=','='),TEQ,
+
+ PAIR('>','='),TGE,
+ PAIR('>','>'),TSR,
+
+ PAIR('^','='),TXE,
+
+ PAIR('|','='),TBE,
+ PAIR('|','|'),TBB,
+
+ PAIR('~','='),T2E
+};
+
+
+
+/* pull out tokens like '==' */
+
+static int atom(int ch)
+{
+ int   ch2;
+ int   lo;
+ int   hi;
+ int   probe;
+ int   twin;
+
+ tokend=tokstart+1;
+
+ if(ch=='\'') return(chconst());
+
+ if(tokend>=buffend)     
+ {
+  if(lexeof) return(ch);
+  else       lexfill();
+ }
+
+ ch2=*tokend;
+
+ if(ispunct(ch2))
+ {
+  ch2+=(ch<<8);
+
+  lo=0;
+  hi=(sizeof(twintab)/(2*sizeof(int)))-1;
+
+  while(1)
+  {
+   probe=(lo+hi)/2;
+   twin=twintab[probe][0];
+
+   if(twin==ch2)
+   {
+    tokend++;
+    ch=twintab[probe][1];
+    if(ch==TCS) return(getbigcomment());
+    else
+    if(ch==TSS) return(getsmlcomment());
+    else
+    if(ch==TSL || ch==TSR)
+    {
+     if(tokend>=buffend)        
+     {
+      if(lexeof) return(ch);
+      else       lexfill();
+     }
+
+     if(*tokend=='=')
+     {
+      if(ch==TSL) ch=TSLE;
+      else        ch=TSRE;
+      tokend++;
+     }
+     return(ch);
+    }
+    else                   return(ch);
+   }
+   if(twin>ch2) hi=probe-1;
+   else         lo=probe+1;
+
+   if(lo>hi) break;
+  }
+ }
+
+ return(ch);
+}
+
+
+
+/* return the next token */
+
+static int nexttokensub(void)
+{
+ int ch;
+
+ while(1)
+ {
+  tokstart=tokend;
+  if(savedchar)                                                                   {
+   *tokend=savech;
+   savedchar=0;
+  }
+
+  switch(ch=skipspace())
+  {
+   case  TEOF:
+              return(TEOF);
+              break;
+
+   case   '"':
+              return(getstring());
+              break;
+    
+      default:
+              if(isdigit(ch))
+                return(getnumber());
+              else
+              if(isalpha(ch))
+                return(getid());
+              else
+                if((ch=atom(ch))!=TCOMMENT) return(ch);
+              break;
+  }
+ }
+
+ return(0);
+}
+
+
+
+
+int nexttoken(void)
+{
+ current=nexttokensub();
+ /* dprintf(0,"token=%s line=%d\n",lexstring(current),lexline); */
+ return(current);
+}
+
+
+/*
+static int currenttoken(void)
+{
+ return(current);
+}
+*/
+
+
+
+static os_error * xlock(int handle,int by)
+{
+
+ tokstart+=by;
+ tokend+=by;
+ buffend+=by;
+
+ return(NULL);
+ USE(handle);
+}
+
+
+
+os_error * lexstart(char * filename,int mode)
+{
+ os_error * err;
+
+ err=NULL;
+
+ if(mode==0)
+ {
+  err=bf_open(filename,'r',BUFFMINSIZE,&lexbf);
+  if(err) return(err);
+  lexfile=filename;
+ }
+ else
+  lexfile="macro";
+
+ if(!buff) err=flex_alloc((flex_ptr)&buff,LEXBUFFSIZE+1+3);
+ if(!err)
+ {
+  flex_setlock((flex_ptr)&buff,xlock,0);
+
+  if(mode==0)
+  {
+   buffend=buff;
+   tokstart=tokend=buffend;
+   lexeof=0;
+   err=lexfill();
+  }
+  else
+  if(mode==1 || mode==2)
+  {
+   if(mode==1) strcpy(buff,"void main(void) { ");
+   else  strcpy(buff,"void main(string & macv,int macenv,int macview) { ");
+   strcat(buff,filename);
+   strcat(buff,";}\n");
+   tokstart=tokend=buff;
+   buffend=buff+strlen(buff);
+   lexeof=1;
+  }
+
+  lexline=1;
+  savedchar=0;
+ }
+ return(err);
+}
+
+
+os_error * lexend(int mode)
+{
+ os_error * err;
+ err=flex_free((flex_ptr)&buff);
+ if(mode==0) err=bf_close(&lexbf,err);
+ return(err);
+}
+

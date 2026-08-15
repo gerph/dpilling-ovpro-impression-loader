@@ -1,0 +1,24 @@
+/*->h.mym */
+
+extern void mwpoint(int * menuhandle,int item,int pointer);
+extern int * pointm(int * menuhandle,int item);
+extern void shade(int * menuhandle,int item);
+extern void dynamic(int * menuhandle,int item);
+extern void unshade(int * menuhandle,int item);
+extern void tick(int * menuhandle,int item);
+extern void untick(int * menuhandle,int item);
+extern void tickst(int * menuhandle,int item,int state);
+extern void untickmenu(int * menuhandle);
+extern void unshadest(int * menuhandle,int item,int state);
+extern char * menuaddr(int * menuhandle,int item);
+extern void writemenu(int * menuhandle,int item,char * string);
+extern void writemenuf(int * menuhandle,int item,char * format, ...);
+extern int getmenuint(int * menuhandle,int item,int * val);
+extern int islastm(int * menuhandle,int item);
+extern void menumakelastst(int * menuhandle,int item,int state);
+extern void unshademenust(int * menuhandle,int item,int state);
+extern os_error * popup_menu(int * menuhandle,int x,int y);
+extern void popmenu(int * menuhandle,int info);
+extern os_error * repopmenu(void);
+extern void setrepopflag(void);
+extern void zapmenu(void);

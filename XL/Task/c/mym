@@ -1,0 +1,280 @@
+/*->c.mym */
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <stdarg.h>
+#include <string.h>
+#include <signal.h>
+#include <ctype.h>
+#include <time.h>
+
+#include "h.os"
+#include "h.wimp"
+#include "h.akbd"
+
+#include "h.mym"
+
+
+static int * lastmenu;
+static int * slastmenu;
+
+static int   repopf;
+
+static int  oldmx,oldmy;
+static int  * oldmenu;
+
+
+
+void mwpoint(int * menuhandle,int item,int pointer)
+{
+ *(menuhandle+(7+1+6*item))=pointer;
+}
+
+
+/* return a pointer to a menu's sub menu */
+
+int * pointm(int * menuhandle,int item)
+{
+ return((int *)(*(menuhandle+(7+1+6*item))));
+}
+
+
+void shade(int * menuhandle,int item)
+{
+ *(menuhandle+(7+2+6*item))=*(menuhandle+(7+2+6*item)) | 0x400000;
+}
+
+
+void dynamic(int * menuhandle,int item)
+{
+ *(menuhandle+(7+6*item))=*(menuhandle+(7+6*item)) | 0x8;
+}
+
+
+void unshade(int * menuhandle,int item)
+{
+  shade(menuhandle,item);
+ *(menuhandle+(7+2+6*item))=*(menuhandle+(7+2+6*item)) ^ 0x400000;
+}
+
+
+void tick(int * menuhandle,int item)
+{
+ *(menuhandle+(7+6*item))=*(menuhandle+(7+6*item)) | 0x1;
+}
+
+void untick(int * menuhandle,int item)
+{
+  tick(menuhandle,item);
+ *(menuhandle+(7+6*item))=*(menuhandle+(7+6*item)) ^ 0x1;
+}
+
+void tickst(int * menuhandle,int item,int state)
+{
+ if(state) tick(menuhandle,item);
+ else      untick(menuhandle,item);
+}
+
+void untickmenu(int * menuhandle)
+{
+ int item=0;
+
+ while(menuhandle)
+ {
+  *(menuhandle+(7+6*item))&=0xFFFFFFFE;
+  if((*(menuhandle+(7+6*item))) & 0x80) break;
+  item++;
+ }
+}
+
+
+static int menusize(int * menuhandle)
+{
+ int size;
+ int item;
+ int height;
+ int gap;
+
+ size=0;
+ item=0;
+
+ height=*(menuhandle+5);
+ gap=*(menuhandle+6);
+
+ while(menuhandle)
+ {
+  size+=height;
+  if((*(menuhandle+(7+6*item))) & 0x80) break;
+  size+=gap;
+  item++;
+ }
+
+ return(size);
+}
+
+
+
+/*
+
+void undynamic(menuhandle,item)  int * menuhandle; int item;
+{
+  dynamic(menuhandle,item);
+ *(menuhandle+(7+6*item))=*(menuhandle+(7+6*item)) ^ 0x8;
+}
+
+ */
+
+
+void unshadest(int * menuhandle,int item,int state)
+{
+ if(state) unshade(menuhandle,item);
+ else      shade(menuhandle,item);
+}
+
+
+
+
+char * menuaddr(int * menuhandle,int item)
+{ int * i;
+  i=(menuhandle+(7+6*item));
+  if( (* (i+2)) & 0x100) return((char *)(*(i+3)));
+  else                   return((char *)(i+3));
+}
+
+
+void writemenu(int * menuhandle,int item,char * string)
+{
+ int  * i;
+ char * p;
+ int    j;
+
+ i=(menuhandle+(7+6*item));
+ if( (* (i+2)) & 0x100) p=(char *)(*(i+3));
+ else                   p=(char *)(i+3);
+
+ for(j=0;j<12;j++)
+ {
+  if(*string) *p++=*string++;
+  else        *p++=32;
+ }
+}
+
+
+
+void writemenuf(int * menuhandle,int item,char * format, ...)
+{
+ va_list args;
+ va_start(args, format);
+ vsprintf(menuaddr(menuhandle,item), format, args);
+ va_end(args);
+}
+
+
+
+/* attempt to read an integer from a menu entry */
+/* return 1 on success                          */
+
+int getmenuint(int * menuhandle,int item,int * val)
+{
+ int code;
+ code=sscanf(menuaddr(menuhandle,item),"%d",val);
+ return(code==1);
+}
+
+
+
+/*
+
+int * menuicon(int * menuhandle,int item)
+{
+  return(menuhandle+(7+6*item+2));
+}
+
+*/
+
+int islastm(int * menuhandle,int item)
+{
+ return((*(menuhandle+(7+6*item))) & 0x80);
+}
+
+
+
+void menumakelastst(int * menuhandle,int item,int state)
+{
+ if(state) *(menuhandle+(7+6*item))|=0x80;
+ else      *(menuhandle+(7+6*item))&=0x7F;
+}
+
+
+
+void unshademenust(int * menuhandle,int item,int state)
+{
+ menuhandle=pointm(menuhandle,item);
+ if(menuhandle)
+ {
+  item=0;
+  while(1)
+  {
+   unshadest(menuhandle,item,state);
+   if(islastm(menuhandle,item)) break;
+   item++;
+  }
+ }
+}
+
+
+os_error * popup_menu(menuhandle,x,y) int * menuhandle; int x,y;
+{
+ os_error * ep;
+
+ ep=wimp_create_menu((wimp_menustr *)menuhandle,x,y);
+
+ oldmenu=menuhandle;
+ oldmx=x;
+ oldmy=y;
+
+ slastmenu=lastmenu=menuhandle;
+
+ return(ep);
+}
+
+
+void popmenu(int * menuhandle,int info) 
+{
+ wimp_mousestr mstr;
+ int           size;
+
+ wimp_get_point_info(&mstr);
+ if(info)
+ {
+  size=menusize(menuhandle);
+  if(mstr.y<(size+96)) mstr.y=size+96;
+ }
+ popup_menu(menuhandle,mstr.x-60,mstr.y);
+}
+
+
+os_error * repopmenu(void)
+{
+ if(repopf)
+ {
+  return(popup_menu(oldmenu,oldmx,oldmy));
+ }
+
+ return(NULL);
+}
+
+
+void setrepopflag(void)
+{
+ wimp_mousestr mstr;
+ wimp_get_point_info(&mstr);
+ repopf=mstr.bbits & 0x1;
+}
+
+
+void zapmenu(void)
+{
+ wimp_create_menu((wimp_menustr *)-1,0,0);
+}
+

@@ -1,0 +1,138 @@
+/*->c.txcb */
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <signal.h>
+#include <ctype.h>
+#include <time.h>
+#include <stdarg.h> 
+
+#include "h.os"
+#include "h.wimp"
+#include "h.bbc"
+
+
+#include "h.etc"
+#include "h.drag"
+
+#include "h.wos"
+#include "h.poll"
+#include "h.save"
+#include "h.bits"
+
+
+#include "h.txcb"
+
+
+
+
+
+static txcbpastefn cbpaste;
+static txcbcopyfn  cbcopy;
+
+
+
+
+#define TXCBMAXLEN 0x200
+
+os_error * txcbpaste(int handle,int icon,int insert)
+{
+ os_error      * err;
+ int             len;
+ char            buff[TXCBMAXLEN];
+ wimp_caretstr   cblock;
+ char          * p;
+ int             oldlen;
+
+
+ err=iconlength(handle,icon,&len);
+ if(!err && cbpaste && len>1)
+ {
+  if(insert)
+  {
+   err=iconaddr(handle,icon,&p);
+   oldlen=xstrlen(p);
+   len=MIN(TXCBMAXLEN,len-oldlen)-1;
+   err=cbpaste(buff,len);
+   len=strlen(buff);
+
+   err=wimp_get_caret_pos(&cblock);
+
+   memcpy(buff+cblock.index,buff,len+1);
+   memcpy(buff,p,cblock.index);
+   memcpy(buff+cblock.index+len,p+cblock.index,oldlen-cblock.index+1);
+  }
+  else
+  {
+   len=MIN(TXCBMAXLEN,len)-1;
+   err=cbpaste(buff,len);
+  }
+
+  if(!err) err=writeicon(handle,icon,buff);
+ }
+
+ return(err);
+}
+
+
+
+os_error * txcbcopy(int handle,int icon)
+{
+ os_error * err;
+ char     * p;
+
+ err=iconaddr(handle,icon,&p);
+ if(!err && cbcopy) err=cbcopy(p);
+
+ return(err);
+}
+
+
+
+os_error * txcbkey(int * key,int handle,int icon)
+{
+ os_error * err;
+ int        ch;
+
+ ch=*key;
+
+ switch(ch)
+ {
+  case 'X'-'@':
+                        err=txcbcopy(handle,icon);
+               if(!err) err=writeicon(handle,icon,"");
+               break;
+
+  case 'C'-'@':
+               err=txcbcopy(handle,icon);
+               break;
+
+  case 'V'-'@':
+               err=txcbpaste(handle,icon,1);
+               break;
+
+  case 'Z'-'@':
+               err=txcbpaste(handle,icon,0);
+               break;
+
+       default:
+               return(NULL);
+ }
+
+ *key=-1;
+
+ return(err);
+}
+
+
+
+os_error * txcbregister(txcbpastefn xpaste,txcbcopyfn xcopy)
+{
+ cbpaste=xpaste;
+ cbcopy=xcopy;
+ return(NULL);
+}
+
+
+

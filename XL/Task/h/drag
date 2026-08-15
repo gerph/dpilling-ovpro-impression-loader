@@ -1,0 +1,9 @@
+/*->h.drag */
+
+extern os_error * dragicon(int mx,int my,int w,int i);
+extern os_error * dragasprite(int w,int i);
+extern os_error * dragaspritestop(void);
+extern os_error * dragstop(void);
+extern os_error * userdrag(int handle,int x0,int y0,int x1,int y1);
+extern os_error * dragawindow(wimp_mousestr * m);
+

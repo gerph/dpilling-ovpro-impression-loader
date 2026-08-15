@@ -1,0 +1,8 @@
+/*->h.encrypt */
+
+
+extern void encryptblock(char * d,char * s,int len,char * key);
+extern void decryptblock(char * d,char * s,int len,char * key);
+extern void decryptresourceblock(char * block,int * len);
+
+

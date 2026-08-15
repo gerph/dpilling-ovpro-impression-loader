@@ -1,0 +1,43 @@
+/*->c.main */
+
+
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <stdio.h>
+#include <locale.h>
+
+#include "h.os"
+#include "h.wimp"
+#include "h.wimpt"
+#include "h.werr"
+#include "h.wos"
+
+#include "h.flex"
+#include "h.conf"
+#include "h.err"
+#include "h.fsx"
+#include "h.bf"
+#include "h.alloc"
+#include "h.scrap"
+
+#include "h.task"
+
+
+
+
+int main(int argc,char * argv[])
+{ 
+ os_error * err;
+
+ setlocale(LC_ALL,"ISO8859-1");
+
+ err=inittask("X","X","<X$Dir>.Resources",NULL);
+ if(!err) err=seticonbar("!X");
+
+ report(err);
+
+ runtask();
+}
+
+

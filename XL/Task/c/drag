@@ -1,0 +1,162 @@
+/*->c.drag */
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <signal.h>
+#include <ctype.h>
+#include <time.h>
+#include <stdarg.h>
+
+#include "h.os"
+#include "h.wimp"
+#include "h.sprite"
+#include "h.werr"
+#include "h.wimpt"
+#include "h.bbc"
+#include "h.akbd"
+#include "h.kernel"
+#include "h.swis"
+
+#include "h.wos"
+#include "h.task"
+
+#include "h.drag"
+
+
+os_error * dragicon(int mx,int my,int w,int i)
+{
+ os_error   * err;
+ wimp_dragstr drg;
+ windowstr    window;
+ iconstr      icon;
+
+ err=getw(w,&window);
+ if(!err) err=geti(w,i,&icon);
+ if(!err)
+ {
+  drg.window=w;
+  drg.type=(wimp_dragtype)5;
+  drg.box.x0=window.bx+icon.ix0;
+  drg.box.y0=window.by+icon.iy0;
+  drg.box.x1=window.bx+icon.ix1;
+  drg.box.y1=window.by+icon.iy1;
+  drg.parent.x0=drg.box.x0-mx;
+  drg.parent.y0=drg.box.y0-my;
+  drg.parent.x1=drg.box.x1-mx+cvdu.screenx;
+  drg.parent.y1=drg.box.y1-my+cvdu.screeny;
+
+  err=wimp_drag_box(&drg);
+ }
+ return(err);
+}
+
+
+
+static int dragaspritestarted;
+
+os_error * dragasprite(int w,int i)
+{
+ os_error * err;
+ os_regset  rx;
+ int        coords[4];
+ windowstr  window;
+ iconstr    icon;
+ char    *  p;
+ int        value;
+
+ if(wimpversion>=300)
+ {
+  err=cmosread(28,&value);
+
+  if(!err && (value & 0x2))
+  {
+   err=getw(w,&window);
+   if(!err) err=geti(w,i,&icon);
+   if(!err) err=iconaddr(w,i,&p);
+   if(!err)
+   {
+    coords[0]=window.bx+icon.ix0;
+    coords[1]=window.by+icon.iy0;
+    coords[2]=window.bx+icon.ix1;
+    coords[3]=window.by+icon.iy1;
+
+    rx.r[0]=(01)+((01)<<2)+((00)<<4)+((1)<<6)+((1)<<7);
+    rx.r[1]=1;
+    rx.r[2]=(int)p;
+    rx.r[3]=(int)coords;
+    err=os_swix(DragASprite_Start,&rx);
+    dragaspritestarted=(err==NULL);
+   }
+  }
+ } 
+ else err=NULL;
+
+ return(err);
+}
+
+
+os_error * dragaspritestop(void)
+{
+ os_error * err;
+ os_regset  rx;
+
+ if(dragaspritestarted) err=os_swix(DragASprite_Stop,&rx);
+ else                   err=NULL;
+
+ return(err);
+}
+
+
+/* brings drag to sudden halt */
+
+os_error * dragstop(void)
+{
+ return(wimp_drag_box((wimp_dragstr *)-1));
+}
+
+
+
+os_error * userdrag(int handle,int x0,int y0,int x1,int y1)
+{
+ wimp_dragstr dblock;
+ mousestr mouse;
+
+ getpointer(&mouse);
+
+ dblock.window=handle;
+ dblock.type=wimp_USER_HIDDEN;
+ dblock.box.x0=mouse.x;
+ dblock.box.y0=mouse.y;
+ dblock.box.x1=mouse.x;
+ dblock.box.y1=mouse.y;
+ dblock.parent.x0=x0;
+ dblock.parent.y0=y0;
+ dblock.parent.x1=x1;
+ dblock.parent.y1=y1;
+ return(wimp_drag_box(&dblock));
+}
+
+
+
+
+
+os_error * dragawindow(wimp_mousestr * m)
+{
+ os_error   * err;
+ wimp_dragstr drg;
+ windowstr    window;
+
+ err=getw(m->w,&window);
+ if(!err)
+ {
+  drg.window=m->w;
+  drg.type=wimp_MOVE_WIND;
+
+  err=wimp_drag_box(&drg);
+ }
+ return(err);
+}
+
+
+

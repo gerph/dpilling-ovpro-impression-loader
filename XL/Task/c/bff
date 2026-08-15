@@ -1,0 +1,96 @@
+/*->c.bff */
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdarg.h>
+
+#include "os.h"
+#include "bbc.h"
+#include "h.sprite"
+#include "h.wimp"
+#include "h.wimpt"
+#include "h.werr"
+#include "h.flex"
+
+
+#include "h.wos"
+#include "h.fsx"
+#include "h.ram"
+#include "h.err"
+#include "h.bf"
+#include "h.timex"
+
+
+
+
+os_error * bf_printf(buffer * bf,char * format, ...)
+{
+ os_error * err;
+ va_list    args;
+ char       string[512];
+ int        len;
+
+ va_start(args,format);
+ vsprintf(string,format,args);
+ va_end(args);
+
+ len=strlen(string);
+
+ err=bf_write(bf,string,len);
+
+ return(err);
+}
+
+
+
+
+os_error * bf_getstring(buffer * bf,char * string,int maxlen,int * eof)
+{
+ os_error * err;
+ char     * p;
+ int        c;
+
+ err=NULL;
+ p=string;
+ *eof=0;
+
+ while(maxlen)
+ {
+  err=bf_getc(bf,&c);
+  if(err) break;
+  if(!c || c=='\r' || c=='\n') break;
+  if(c==EOF)
+  {
+   *eof=1;
+   break;
+  }
+
+  *p++=c;
+  maxlen--;
+ }
+
+ if(maxlen==0) *(p-1)=0;
+ else          *p=0;
+
+ return(err);
+}
+
+
+
+
+
+os_error * stdfileheader(buffer * bf,char * name)
+{
+ char string[256];
+
+ bf_printf(bf,"//->%s\n",name);
+
+ writesystimedate(string);
+
+ return(bf_printf(bf,
+        "// Produced by %s at %s\n//\n//\n\n\n",wimpt_programname(),string));
+}
+
+

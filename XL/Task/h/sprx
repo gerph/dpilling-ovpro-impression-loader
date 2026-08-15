@@ -1,0 +1,11 @@
+/*->h.sprx */
+
+
+extern int  palentriestab[4];
+
+extern void genpalette(int ln2bpp,int * palentries,int * paltab);
+extern void gengreypal(int ln2bpp,int * palentries,int * paltab);
+extern int  makemode2(int obpp,int deltax,int deltay,int modeflags,int ncolours,int haspalette);
+extern void genpal256(int * paltab,int spbpp,int * palentriesp);
+
+

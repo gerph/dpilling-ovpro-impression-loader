@@ -1,0 +1,251 @@
+/*->c.conf */
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+#include <stdarg.h>
+
+
+#include "h.swis"
+#include "h.kernel"
+#include "h.bbc"
+#include "h.os"
+#include "h.wimp"
+#include "h.wimpt"
+
+#include "h.wos"
+#include "h.mym"
+
+#include "h.poll"
+#include "h.temp"
+#include "h.trans"
+#include "h.etc"
+
+#include "h.conf"
+
+
+static int conf_ok;
+static int doconfirm=1;
+static int conmode;
+
+             /* CONYN Yes/No CONDN Discard/Cancel CONDCS Discard/Cancel/Save */
+
+
+static os_error * conficon(int handle,int userhandle,wimp_mousestr * m)
+{
+
+ switch(m->i)
+ {
+  case 0:
+  case 1:
+         conf_ok=m->i;
+         break;
+
+  case 4:
+  case 5:
+         conf_ok=-1;  /* Cancel */
+         break;
+
+  case 6:
+         conf_ok=1; /* Save  */
+         break;
+
+  case 3:
+         if(conmode==CONDC) conf_ok=1;  /* Discard same as  YES */
+                                        /* Are you sure you want to Quit? */
+         else
+         if(conmode==CONDCS) conf_ok=0; /* Discard==No  */
+         break;
+ }
+
+ return(NULL);
+
+ handle=handle;
+ userhandle=userhandle;
+}
+
+
+static os_error * confkey(int handle,int userhandle,int icon,int * key)
+{
+ int ch;
+
+ ch=toupper(*key);
+
+ if(*key==27)
+ {
+  conf_ok=-1;
+ }
+ else
+ if(conmode==CONYN)
+ {
+  if(ch=='Y' || ch==13) conf_ok=1;
+  else
+  if(ch=='N') conf_ok=0;
+ }
+ else
+ if(conmode==CONDC)
+ {
+  if(ch=='C') conf_ok=-1;
+  else
+  if(ch=='D') conf_ok=1;
+ }
+ else
+ if(conmode==CONDCS)
+ {
+  if(ch=='S' || ch==13) conf_ok=1;
+  else
+  if(ch=='D') conf_ok=0;
+  else
+  if(ch=='C') conf_ok=-1;
+ }
+
+ if(conf_ok!=-2) *key=-1;
+
+ return(NULL);
+
+ USE(handle);
+ USE(userhandle);
+ USE(icon);
+}
+
+
+static void czero(int userhandle)
+{
+ USE(userhandle);
+}
+
+
+/* returns 1==OK 0==NO -1==FORGET IT */
+
+os_error * confirm(int mode,int * result,char * format, ...)
+{
+ va_list       args;
+ char          string[256];
+ char          temp[256];
+ int           handle;
+ os_error  *   err;
+ windowstr     window;
+ wimp_caretstr cblock;
+ int           force;
+ static int    active;
+
+
+ strcpy(temp,format);
+ err=trans(temp,sizeof(temp));
+
+ va_start(args,format);
+ vsprintf(string,temp,args);
+ va_end(args);
+
+ if(active)
+ {
+  *result=-1;
+ }
+ else
+ {
+  active=1;
+
+  force=mode & CONFORCE;
+  mode&=~CONFORCE;
+
+  if(!doconfirm && !force)
+  {
+   if(mode==CONDCS) *result=0;
+   else             *result=1;
+  }
+  else
+  {
+   *result=-1;
+   err=trans(string,sizeof(string));
+   if(!err) 
+   {
+   /* tsprintf(sizeof(temp),temp,"{CONT}");
+    err=createwindowtitle(TCONF,temp,&handle); */
+
+    err=createwindowtitle(TCONF,wimpt_programtextname(),&handle);
+   }
+
+   if(!err)
+   {
+    setindirect(handle,2,sizeof(string),string);
+
+    conmode=mode;
+
+    if(mode==CONYN)
+    {
+     wimp_delete_icon(handle,3);
+     wimp_delete_icon(handle,4);
+     wimp_delete_icon(handle,5);
+     wimp_delete_icon(handle,6);
+    }
+    else
+    if(mode==CONDC)
+    {
+     wimp_delete_icon(handle,0);
+     wimp_delete_icon(handle,1);
+     wimp_delete_icon(handle,5);
+     wimp_delete_icon(handle,6);
+    }
+    else
+    if(mode==CONDCS)
+    {
+     wimp_delete_icon(handle,0);
+     wimp_delete_icon(handle,1);
+     wimp_delete_icon(handle,4);
+    }
+
+    conf_ok=-2;
+
+    addkeyevent(confkey,handle,0);
+    addclickevent(conficon,handle,0);
+    addzeroevent(czero,0);
+    addhelpevent(NULL,handle,TCONF);
+
+    err=menuwindow(handle);
+    if(!err)
+    { 
+     err=wimp_get_caret_pos(&cblock);
+     setfocus(handle);
+
+     while(conf_ok==-2)
+     {
+      getw(handle,&window);
+      if(!(window.wflags & 0x10000))
+      {
+       conf_ok=-1;
+       break;
+      }
+      poll();
+     }
+
+     closedowncheck(handle);
+
+     if(window.wflags & 0x10000) zapmenu();
+     err=wimp_set_caret_pos(&cblock);
+    }
+
+    remkeyevent(confkey,handle,0);
+    remclickevent(conficon,handle,0);
+    remzeroevent(czero,0);
+    remhelpevent(NULL,handle,TCONF);
+
+    closedown(&handle);
+   }
+
+   *result=conf_ok;
+  }
+  active=0;
+ }
+
+ return(err);
+}
+
+
+void confirmset(int docon)
+{
+ doconfirm=docon;
+}
+
+

@@ -1,0 +1,453 @@
+/*->h.xint  */
+
+#define XCODECHUNK   0x400
+#define XSTACKCHUNK  0x400
+
+#define STRCHUNK     0x400
+#define STRMAPCHUNK  0x100
+
+#define XSYMCHUNK    0x100
+#define XHEAPCHUNK   0x1000
+
+#define PRSTACKCHUNK 0x80
+
+
+/* h.xlex */
+
+
+#define LEXBASE  0x101
+
+#define TEOF     0x101
+#define TCSTRING 0x102
+#define TID      0x103
+#define TNUMBER  0x104
+#define TCOMMENT 0x105
+#define TNE      0x106   /* != */
+#define TQE      0x107   /* %= */
+#define TAA      0x108   /* && */
+#define TAE      0x109   /* &= */
+#define TCE      0x10A  /* * / */
+#define TTE      0x10B  /* *= */
+#define TPP      0x10C  /* ++ */
+#define TPE      0x10D  /* += */
+#define TMM      0x10E  /* -- */
+#define TME      0x10F  /* -= */
+#define TCS      0x110  /* comment start */
+#define TSS      0x111  /* slash slash   */
+#define TSE      0x112  /* /= */
+#define TSL      0x113  /* << */
+#define TLE      0x114  /* <= */
+#define TEQ      0x115  /* == */
+#define TGE      0x116  /* >= */
+#define TSR      0x117  /* >> */
+#define TXE      0x118  /* ^= */
+#define TBE      0x119  /* |= */
+#define TBB      0x11A  /* || */
+#define T2E      0x11B  /* ~= */
+
+
+#define TNULL     0x11C
+#define TBREAK    0x11D
+#define TCASE     0x11E
+#define TCONST    0x11F
+#define TCONTINUE 0x120
+#define TDEFAULT  0x121
+#define TDO       0x122
+#define TDOUBLE   0x123
+#define TELSE     0x124
+#define TENUM     0x125
+#define TEXTERN   0x126
+#define TFLOAT    0x127
+#define TFOR      0x127
+#define TGOTO     0x198
+#define TIF       0x12A 
+#define TINT      0x12B
+#define TRETURN   0x12C
+#define TSTATIC   0x12D
+#define TSTRING   0x12E
+#define TSTRUCT   0x12F
+#define TSWITCH   0x130
+#define TTYPEDEF  0x131
+#define TVOID     0x132
+#define TVOLATILE 0x133
+#define TWHILE    0x134
+
+#define TSLE      0x135
+#define TSRE      0x136
+
+
+#define LEXMAX    0x36
+
+extern char * lexnames[LEXMAX];
+
+extern char * lexstring(int token);
+
+
+extern int    lexn;                                              
+extern char * tokstart; 
+
+extern os_error * lexstart(char * filename,int mode);
+extern os_error * lexend(int mode);
+extern int        nexttoken(void);
+extern int        current;
+
+extern int    lexline;
+
+
+extern char * lexfile;
+
+/* h.xmain */
+
+#define ERRMISSING   0
+#define ERRUNMATCHED 1
+#define ERRBADTOKEN  2
+#define ERRWRONGTYPE 3
+#define ERRNEEDLVAL  4
+#define ERRNEEDTYPE  5
+#define ERRBADARGS   6
+#define ERRWRONGARGS 7
+#define ERRUNKNOWNID 8
+#define ERRMULTIPLE  9
+#define ERRNEEDCONST 10
+#define ERRSTATEMENT 11
+#define ERRNOBRK     12
+#define ERRNOCONT    13
+#define ERRNEEDEXP   14
+#define ERRNOTSWITCH 15
+#define ERRONEDEFLT  16
+#define ERRWRONGRET  17
+#define ERRMAXARG    18
+#define ERRDIVZERO   19
+#define ERRMEM       20
+
+#define MAXERRNO     21
+
+
+extern char * errmessages[MAXERRNO];
+extern void xraise(int errno,...);
+
+
+
+typedef struct stagestr
+{
+
+ int heapoffset;
+ int fileoffset;
+ int nameoffset;
+ int symbolsoffset;
+ int codeoffset;
+
+} stagestr;
+
+
+
+extern int  fileopen(int fp);
+extern int  fileclose(int fp);
+extern int  filewrites(int fp);
+extern int  filewritei(int fp);
+extern int  fileerror(int fp);
+extern int  fileeof(int fp);
+extern int  filereadi(int fp);
+extern int  filereads(int fp);
+extern int  fileputc(int fp);
+extern int  filegetc(int fp);
+extern int  fileseek(int fp);
+extern int  filetell(int fp);
+extern void xtimestring(int fp);
+extern void xtimeformat(int fp);
+extern void gettimestamp(int fp);
+extern void xerrorbox(int fp);
+extern int  xmessagebox(int fp);
+extern int  xconfirm(int fp);
+extern void xexit(int fp);
+extern int  xobjectexists(int fp);
+extern void xstartscan(int fp);
+extern int  xnextobject(int fp);
+
+extern void printi(int fp);
+extern void prints(int fp);
+extern int  stoi(int fp);
+extern int  itos(int fp);
+extern int  itoxs(int fp);
+extern int  schar(int fp);
+extern int  chars(int fp);
+extern int  slen(int fp);
+extern int  mids(int fp);
+extern int  sins(int fp);
+extern void bbcvdu(int fp);
+extern int  bbcinkey(int fp);
+extern int  bbcadval(int fp);
+extern int  bbcget(int fp);
+extern int  getenvs(int fp);
+extern int  osclis(int fp);
+extern int  systems(int fp);
+extern void ourfx(int fp);
+extern int  ourswi13(int fp);
+extern int  ourswin4(int fp);
+extern int  ourswin8(int fp);
+extern void xpause(int fp);
+extern void xtranslate(int fp);
+extern int  xosversion(int fp);
+extern int  xscale(int fp);
+
+
+/* h.xsym */
+
+
+typedef struct symstr
+{
+ int          parent;
+ int          sibls[2];
+ int          balance;
+ int          val;           /* value/stack offset/code location */
+ int          args;          /* argument types                  */
+ char         type;          /* void/int/string                 */
+ char         mode;          /* global/local/function/extern fn */
+ char         argc;          /* number of arguments             */
+ char         key[1];
+} symstr;
+
+
+
+typedef struct symstk
+{
+ int heap;
+ int root;
+} symstk;
+
+
+
+#define        xptr(p) (((symstr*)(xsymheap+(p))))
+
+extern int    xnsyms;        /* number of stages */
+extern char * xsymheap;
+
+
+extern int  xadd(char ** name,int val,int type,int mode);
+extern int  xfind(char * name);
+extern int  xfindi(char * name,int * internal);
+extern int  xfinds(char * name,int stage);
+extern void xremstage(int stage);
+extern int  xaddstage(void);
+extern os_error * xsymstart(void);
+
+#define MAXARG 16
+
+extern  int symfntype(int argc,int sym,int internal,int * mode);
+extern  int symfnargc(int sym,int internal);
+extern void setsymfntype(int argc,int sym,int type,int mode);
+
+
+
+
+#define XFNS 49
+
+
+
+#define XSNOTFOUND 0x7FFFFFFF
+
+
+/* h.xcode */
+
+#define ERTS            0
+#define EADD            1
+#define ESUB            2
+#define EMUL            3
+#define EDIV            4
+#define EMOD            5
+#define EXOR            6
+#define EAND            7
+#define EORR            8
+#define ENEG            9
+#define E2C            10
+#define EPUSH0         11
+#define EPUSH1         12
+#define EPULL0         13
+#define EPULL1         14
+#define ENOT           15
+#define ESL            16
+#define ESR            17
+#define ELLGT          18 
+#define ELLGE          19 
+#define ELLLT          20 
+#define ELLLE          21 
+#define ELLEQ          22 
+#define ELLNE          23 
+#define EPUSHFP        24
+#define EPULLFP        25
+
+#define SDUP1          26
+#define SADD           27
+#define SVOID0         28
+#define SVOID1         29
+#define SVOID2         30
+#define SLLGT          31
+#define SLLGE          32
+#define SLLLT          33
+#define SLLLE          34
+#define SLLEQ          35
+#define SLLNE          36
+#define SSL            37
+#define SSR            38
+#define SCREATE        39
+#define SUPPER         40
+#define SLOWER         41
+#define SSWAP          42
+#define SDUP0          43
+#define SDIV           44
+#define SMOD           45
+#define SMUL10         46
+#define SMUL01         47
+
+
+
+#define EBEQ            0
+#define EBNE            1
+
+#define ELDC0           2
+#define ELDC1           3
+#define ELDF0           4
+#define ELDF1           5
+#define EJSR            6
+
+
+#define ELLCON0         7
+#define ELLCON1         8
+
+
+#define EADDSTC         9
+#define ESUBSTC         10
+#define EMULSTC         11
+#define EDIVSTC         12
+#define EMODSTC         13
+#define EANDSTC         14
+#define EORRSTC         15
+#define EXORSTC         16
+
+#define EADDSTF         17
+#define ESUBSTF         18
+#define EMULSTF         19
+#define EDIVSTF         20
+#define EMODSTF         21
+#define EANDSTF         22
+#define EORRSTF         23
+#define EXORSTF         24
+
+#define EAPPSTC          25
+#define EAMMSTC          26
+#define EAPPSTF          27
+#define EAMMSTF          28
+
+#define ESTC            29
+#define ESTF            30
+
+#define EFPSP           31
+
+#define EJSRX           32
+
+#define EBPPSTC          33
+#define EBMMSTC          34
+#define EBPPSTF          35
+#define EBMMSTF          36
+
+#define EJMP             37
+
+#define ESPSP            38
+#define ESWITCH          39
+
+
+#define SSTC             40
+#define SSTF             41
+#define SADDSTC          42
+#define SADDSTF          43
+
+#define ESSLSTC          44
+#define ESSLSTF          45
+#define ESSRSTC          46
+#define ESSRSTF          47
+#define SPULL            48
+#define SPULLX           49
+
+
+
+
+
+#define EBIGVAL 0x8001
+
+extern void   xasm(int code,int offset);
+extern void   xasmz(int code);
+extern void   xasmat(int code,int offset,int at);
+extern void   xasmalign(void);
+extern void   xasmwriteword(int word);
+extern os_error * xcodestart(void);
+extern int  * stack;
+extern int    xcodesize;
+extern char * xcodeheap; 
+
+
+
+/* h.xstr */
+
+extern int    createstring(char * p);
+extern int    createstringr(char ** p);
+extern int    duplicatestring(int s1);
+extern void   copystring(int s1,int s2);
+extern void   catstrings(int s1,int s2);
+extern int    cmpstrings(int s1,int s2);
+extern os_error * xstringstart(void);
+extern void   upperstring(int s1);
+extern void   lowerstring(int s1);
+extern void   swopstring(int s1);
+extern void   shiftstringleft(int s1,int n);
+extern void   shiftstringright(int s1,int n);
+extern void   catstringintright(int s1,int byte);
+extern void   catstringintleft(int s1,int byte);
+extern int    stringn(int s1,int n);
+extern void   mulstring(int s1,int n);
+extern int    divstring(int s1,int s2);
+extern int    modstring(int s1,int s2);
+extern void   stringpull(int n,int top);
+extern void   setstrings(int n);
+extern int    nostrings;
+extern int    mkstring(int len);
+
+extern void   stringdump(int fp);
+
+
+extern xcasefn xtoup;
+extern xcasefn xtolo;
+extern xcasefn xisup;
+extern xcasefn xislo;
+
+
+
+
+/* h.xparse */
+
+
+
+
+#define PUNKNOWN   0
+#define PLEFT      1
+#define PCONST     2
+#define PEXP       3
+
+
+
+/* there is a fiddle here, PREF has to be bit 1, to work with storage of */
+/* function parameter types                                              */
+
+
+#define PGLOBAL    0
+#define PSTACK     1
+#define PREF       2
+#define PFN        3
+#define PXFN       4
+
+
+extern os_error * xparse(void);
+
+
+
+
+

@@ -1,0 +1,1022 @@
+/*->c.xmain  */
+
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <signal.h>
+#include <stdarg.h>
+#include <ctype.h>
+#include <time.h>
+#include <locale.h>
+#include <setjmp.h>
+
+
+
+#include "h.os"
+#include "h.bbc"
+#include "h.flex"
+#include "h.werr"
+#include "h.wimp"
+
+#include "h.swis"
+
+#include "h.fsx"
+#include "h.conf"
+#include "h.bits"
+#include "h.trans"
+#include "h.etc"
+#include "h.wos"
+#include "h.poll"
+#include "h.timex"
+#include "h.xmath"
+#include "h.err"
+
+
+#include "h.throwback"
+
+#include "h.xext"
+#include "h.xint"
+
+
+
+
+
+/*****************************************************************************/
+
+char * errmessages[MAXERRNO]=
+{
+ "{XNEEDED}",
+ "{XMATCH}",
+ "{XTOKEN}",
+ "{XTYPE}",
+ "{XLVALUE}",
+ "{XBTYPE}",
+ "{XBADARG}",
+ "{XWRARG}",
+ "{XIDENT}",
+ "{XMULT}",
+ "{XCONST}",
+ "{XSTATE}",
+ "{XBREAK}",
+ "{XCONT}",
+ "{XPRES}",
+ "{XSWITCH}",
+ "{XDEFLT}",
+ "{XRETURN}",
+ "{XARGS}",
+ "{XDIVZ}",
+ "{XMEM}"
+};
+
+
+static jmp_buf xraisejmp;
+
+
+void xraise(int errno,...)
+{
+ va_list args;
+ char v[128];
+ char format[128];
+
+ strcpy(format,errmessages[errno]);
+ trans(format,sizeof(format));
+
+ va_start(args, errno);
+ vsprintf(v, format, args);
+
+ va_end(args);
+
+ if(!throwbackstart())
+ {
+  throwbacksend(Throwback_ReasonProcessing,lexfile);
+  throwbacksend(Throwback_ReasonErrorDetails,lexfile,lexline,2,v);
+
+  throwbackend();
+ }
+ else werr(0,"{XERR}",v,lexline,lexfile);
+
+ longjmp(xraisejmp,1);
+}
+
+
+/*****************************************************************************/
+/* Library functions */
+
+
+void printi(int fp)
+{
+ printf("%d",stack[fp]);
+}
+
+
+void prints(int fp)
+{
+ printf("%s",stringptr(stack[fp]));
+}
+
+
+/* string to int */
+
+int stoi(int fp)
+{
+ return(atoi(stringptr(stack[fp])));
+}
+
+
+/* int to dec string */
+
+int itos(int fp)
+{
+ char temp[16];
+ sprintf(temp,"%d",stack[fp]);
+ return(createstring(temp));
+}
+
+
+/* to hex string */
+
+int itoxs(int fp)
+{
+ char temp[16];
+ sprintf(temp,"%x",stack[fp]);
+ return(createstring(temp));
+}
+
+
+/* return char n of string */
+
+int schar(int fp)
+{
+ return(*(stringptr(stack[fp])+stack[fp+1]));
+}
+
+
+/* make string of char */
+
+int chars(int fp)
+{
+ char temp[16];
+ temp[0]=stack[fp];
+ temp[1]=0;
+ return(createstring(temp));
+}
+
+/* string len */
+
+int slen(int fp)
+{
+ return(stringlen(stack[fp]));
+/* return(strlen(stringptr(stack[fp]))); */
+}
+
+
+/* string mids(string s,int start,int len) */
+
+int mids(int fp)
+{
+ int    s;
+ char * p;
+ char * q;
+ int    len;
+ int    slen;
+ int    start;
+
+ start=stack[fp+1];
+ len=stack[fp+2];
+ slen=stringlen(stack[fp]); /* C style doesn't count last 0 */
+
+ if(start<0) start=0;
+ if(start>slen) start=slen;
+
+ if(len<0) len=0;
+ if((len+start)>slen) len=slen-start;
+
+ s=mkstring(len);
+
+ p=stringptr(stack[fp])+start;
+ q=stringptr(s);
+
+ memcpy(q,p,len);
+ *(q+len)=0;
+
+ return(s);
+}
+
+
+int sins(int fp)
+{
+ char * p;
+ char * q;
+ int    from;
+
+ from=stack[fp+2];
+ if(from<stringlen(stack[fp]))
+ {
+  p=stringptr(stack[fp]);
+  q=stringptr(stack[fp+1]);
+
+  q=strstr(p+from,q);
+  if(q) return(q-p);
+ }
+ return(-1);
+}
+
+
+
+void bbcvdu(int fp)
+{
+ bbc_vdu(stack[fp]);
+}
+
+
+int bbcinkey(int fp)
+{
+ return(bbc_inkey(stack[fp]));
+}
+
+
+int bbcadval(int fp)
+{
+ return(bbc_adval(stack[fp]));
+}
+
+
+int bbcget(int fp)
+{
+ return(bbc_get());
+ fp=0;
+}
+
+
+
+int getenvs(int fp)
+{
+ char * p=getenv(stringptr(stack[fp]));
+
+ if(p) 
+ {
+  assignstring(stack[fp],p);
+  return(1);
+ }
+ else
+  return(0);
+}
+
+
+
+int osclis(int fp)
+{
+ os_error * ep;
+
+ ep=os_cli(stringptr(stack[fp]));
+
+ if(ep)
+ {
+  assignstring(stack[fp],ep->errmess);
+  return(1);
+ }
+ else
+  return(0);
+
+}
+
+
+int systems(int fp)
+{
+ char string[256];
+ strcpy(string,stringptr(stack[fp]));
+ return(system(string));
+}
+
+
+void xtranslate(int fp)
+{
+ char string[256];
+ strcpy(string,stringptr(stack[fp]));
+ trans(string,sizeof(string));
+ assignstring(stack[fp],string);
+}
+
+
+
+
+void ourfx(int fp)
+{
+ fx(stack[fp],stack[fp+1],stack[fp+2]);
+}
+
+
+
+/* return r1, use r0,r1,r2 */
+
+int ourswi13(int fp)
+{
+ os_regset rx;
+
+ memcpy(rx.r,stack+fp+1,3*sizeof(int));
+ os_swix(stack[fp],&rx);
+
+ return(rx.r[1]);
+}
+
+
+int ourswin4(int fp)
+{
+ os_regset rx;
+ int       n;
+
+ n=stack[fp];
+ memcpy(rx.r,stack+fp+2,4*sizeof(int));
+ os_swix(stack[fp+1],&rx);
+ return(rx.r[n]);
+}
+
+
+
+
+int ourswin8(int fp)
+{
+ os_regset rx;
+ int       n;
+
+ n=stack[fp];
+ memcpy(rx.r,stack+fp+2,8*sizeof(int));
+ os_swix(stack[fp+1],&rx);
+ return(rx.r[n]);
+}
+
+
+int xscale(int fp)
+{
+ return(scale(stack[fp],stack[fp+1],stack[fp+2]));
+}
+
+
+
+
+#define MAXFILE 4
+
+static FILE * fpn[MAXFILE];
+
+
+
+/* int    fileopen(string & name,string & mode)  // open file  */
+/* returns file handle >0
+   or 0 if file can't be opened. */
+
+
+int fileopen(int fp)
+{
+ int i;
+
+ for(i=0;i<MAXFILE;i++) if(!fpn[i]) break;
+
+ if(i==MAXFILE) zraise(ZFILEMAX);
+
+ fpn[i]=fopen(stringptr(stack[fp]),stringptr(stack[fp+1]));
+
+ if(fpn[i]) return(i+1);
+ else       return(0);
+}
+
+
+
+/* int    fileclose(int handle);                  // close file */
+/* return 0 if sucessfuly closed
+   or non zero on error. */
+
+
+int fileclose(int fp)
+{
+ int i=stack[fp]-1;
+ int code; 
+
+ code=1;
+
+ if(i>=0 && i<MAXFILE && fpn[i])
+ {
+  code=fclose(fpn[i]);
+  fpn[i]=0;
+ }
+
+ return(code);
+}
+
+
+
+/* int    filewrites(string & s,int handle);      // write string to file */
+/* return non zero on error
+   or         0 if OK
+
+   Trailing zero not written.
+ */
+
+int filewrites(int fp)
+{
+ int i=stack[fp+1]-1;
+
+ if(i>=0 && i<MAXFILE && fpn[i])
+ {
+  return(fputs(stringptr(stack[fp]),fpn[i]));
+ }
+ return(1);
+}
+
+
+
+
+/* int    filewritei(int i,int handle);           // write int    to file */
+/* return non zero on error
+           0 if OK */
+
+
+int filewritei(int fp)
+{
+ int i=stack[fp+1]-1;
+
+ if(i>=0 && i<MAXFILE && fpn[i])
+ {
+  return(!fwrite(&(stack[fp]),4,1,fpn[i]));
+ }
+ return(1);
+}
+
+
+
+
+/* int    fileerror(int handle);                  // check for error */
+/* return non zero if an error has occured
+   or  0 if OK */
+
+int fileerror(int fp)
+{
+ int i=stack[fp]-1;
+
+ if(i>=0 && i<MAXFILE && fpn[i])
+ {
+  return(ferror(fpn[i]));
+ }
+ return(1);
+}
+
+
+
+/* int    fileeof(int handle);                    // check for eof   */
+/* return non zero on EOF
+   or 0 if not eof */
+
+int fileeof(int fp)
+{
+ int i=stack[fp]-1;
+
+ if(i>=0 && i<MAXFILE && fpn[i])
+ {
+  return(feof(fpn[i]));
+ }
+ return(1);
+}
+
+
+
+/* int    filereadi(int handle);                  // read int        */
+/* return integer read */
+
+int filereadi(int fp)
+{
+ int i=stack[fp]-1;
+ int temp;
+
+ if(i>=0 && i<MAXFILE && fpn[i])
+ {
+  fread(&temp,4,1,fpn[i]);
+  return(temp);
+ }
+ return(0);
+}
+
+
+
+
+
+/* int    filereads(string & s,int handle);       // read string     */
+/* return non zero on error
+   or         0 if OK */
+
+#define SBFLEN 128
+
+
+int filereads(int fp)
+{
+ int  i=stack[fp+1]-1;
+ char temp[SBFLEN];
+ int  s=stack[fp];
+ int  first;
+
+ if(i>=0 && i<MAXFILE && fpn[i])
+ {
+  first=1;
+
+  while(1)
+  {
+   if(fgets(temp,SBFLEN,fpn[i]))
+   {
+    if(first)
+    {
+     assignstring(s,temp);
+     first=0;
+    }
+    else
+    {
+     appendstring(s,temp);
+    }
+   }
+
+   if(ferror(fpn[i])) return(1);
+   if(feof(fpn[i]))
+   {
+    if(first) return(1);
+    else      break;
+   }
+   if(strlen(temp)<(SBFLEN-1) || temp[SBFLEN-2]=='\n') break;
+  }
+  return(0);
+ }
+ return(1);
+}
+
+
+
+
+/* int    fileput(int i,int handle);              // put byte to file */
+/* return the character written or EOF on error */
+
+int fileputc(int fp)
+{
+ int i=stack[fp+1]-1;
+
+ if(i>=0 && i<MAXFILE && fpn[i])
+ {
+  return(fputc(stack[fp],fpn[i]));
+ }
+ return(EOF);
+}
+
+
+
+
+/* int    fileget(int handle);                    // get byte from file */
+/* return byte or EOF on error */
+
+int filegetc(int fp)
+{
+ int i=stack[fp]-1;
+
+ if(i>=0 && i<MAXFILE && fpn[i])
+ {
+  return(fgetc(fpn[i]));
+ }
+ return(EOF);
+}
+
+
+
+/* int    fileseek(int offset,int handle);  */
+/* return non zero for an improper request
+   or 0 if OK */
+
+
+int fileseek(int fp)
+{
+ int i=stack[fp+1]-1;
+
+ if(i>=0 && i<MAXFILE && fpn[i])
+ {
+  return(fseek(fpn[i],stack[fp],SEEK_SET));
+ }
+ return(1);
+}
+
+
+/* int    filetell(int handle);  */
+/* return -1 on error or the file position >=0 if OK. */
+
+int filetell(int fp)
+{
+ int i=stack[fp]-1;
+
+ if(i>=0 && i<MAXFILE && fpn[i])
+ {
+  return((int)ftell(fpn[i]));
+ }
+ return(-1);
+}
+
+
+
+/* void gettimestring(string & format,string &  result) */
+
+void xtimestring(int fp)
+{
+ arctime timex;
+ char    format[128];
+ char    result[128];
+
+ getcurtime(&timex);
+
+ strcpy(format,stringptr(stack[fp]));
+
+ writets(result,format,&timex);
+
+ assignstring(stack[fp+1],result);
+}
+
+
+
+/* void gettimestamp(string & format,string & result,string & path); */
+
+void gettimestamp(int fp)
+{
+ arctime timex;
+ char    format[128];
+ char    result[128];
+ fstat   f;
+
+ fs_stat(stringptr(stack[fp+2]),&f);
+ filetime(&f,&timex);
+
+ strcpy(format,stringptr(stack[fp]));
+ writets(result,format,&timex);
+ assignstring(stack[fp+1],result);
+}
+
+
+
+/* void gettimeformat(string & date,string & time) */
+
+void xtimeformat(int fp)
+{
+ assignstring(stack[fp],sysdstring);
+ assignstring(stack[fp+1],syststring);
+}
+
+
+
+
+void xerrorbox(int fp)
+{
+ zraise(ZUSER,stringptr(stack[fp]));
+}
+
+int xmessagebox(int fp)
+{
+ return(messagebox(stringptr(stack[fp])));
+}
+
+
+int xconfirm(int fp)
+{
+ int result;
+ confirm(CONYN,&result,stringptr(stack[fp]));
+ return(result);
+}
+
+
+void xexit(int fp)
+{
+ zraise(ZEXIT);
+ fp=0;
+}
+
+
+int xobjectexists(int fp)
+{
+ int type;
+ if(fs_exists(stringptr(stack[fp]),&type)) type=0;
+ return(type);
+}
+
+
+void xstartscan(int fp)
+{
+ fp=0;
+ fs_startscan();
+}
+
+
+int xnextobject(int fp)
+{
+ fxstat f;
+ int    eof;
+
+ if(!fs_nextitem(stringptr(stack[fp]),&f,stringptr(stack[fp+1]),&eof))
+ {
+  if(!eof)
+  {
+   assignstring(stack[fp+2],f.name);
+   return(f.f.object);
+  }
+  else return(0);
+ }
+ else return(0);
+}
+
+
+
+
+int xosversion(int fp)
+{
+ return(osversion());
+ USE(fp);
+}
+
+
+
+
+static int pauseflag;
+
+static void xpausezero(int userhandle)
+{
+ pauseflag=1;
+ USE(userhandle);
+}
+
+void xpause(int fp)
+{
+ pauseflag=0;
+ addscheduledevent(xpausezero,0,stack[fp]);
+ while(!pauseflag) poll();
+}
+
+
+int * xstackptr(void)
+{
+ return(stack);
+}
+
+
+
+
+
+
+
+typedef struct programstage
+{
+ int code;
+ int stage;
+ int nostrings;
+} programstage;
+
+
+
+static programstage * prstack; 
+static int            prstages;
+
+
+
+/* removes the last file */
+
+os_error * xremfile(void)
+{
+ if(prstages)
+ {
+  prstages--;
+
+  xcodesize=prstack[prstages].code;
+  flex_chunk((flex_ptr)&xcodeheap,xcodesize,XCODECHUNK);
+
+  xremstage(prstack[prstages].stage);
+
+  setstrings(prstack[prstages].nostrings);
+
+  flex_chunk((flex_ptr)&prstack,prstages*sizeof(programstage),PRSTACKCHUNK);
+ }
+ return(NULL);
+}
+
+
+
+static os_error * xrunmain(int * result)
+{
+ if(xfinds("main",xnsyms)!=XSNOTFOUND)
+ {
+  return(xexec("main",result,""));
+ }
+ return(NULL);
+}
+
+
+
+
+static os_error * xrunmain2(int * result,int rarg,int inval,int inval2)
+{
+ if(xfinds("main",xnsyms)!=XSNOTFOUND)
+ {
+  return(xexec("main",result,"sII",rarg,inval,inval2));
+ }
+ return(NULL);
+}
+
+
+
+
+/* adds another file to program */
+/* return 1 OK 0 ERROR          */
+
+os_error * xaddfile(char * filename,int rarg,int exec,int * result,
+                                             int inval,int inval2)
+{
+ os_error * err;
+ int        mode;
+
+ mode=((exec & 0xF0)>>4);
+
+ *result=0;
+
+/* dprintf(0,"xadd %s",filename); */
+
+
+ err=lexstart(filename,mode);
+ if(!err)
+ {
+  if(!setjmp(xraisejmp))
+  {
+
+   err=flex_chunk((flex_ptr)&prstack,
+                         (prstages+1)*sizeof(programstage),PRSTACKCHUNK);
+   if(!err)
+   {
+    prstack[prstages].code=xcodesize;
+    prstack[prstages].stage=xaddstage();
+    prstack[prstages].nostrings=nostrings;
+    prstages++;
+
+    err=xparse();
+   }
+
+
+   if(!err) err=lexend(mode);
+   else         lexend(mode);
+
+   if(exec)
+   {
+    if(rarg) xrunmain2(result,rarg,inval,inval2);
+    else     xrunmain(result); /* NB we are using result to flag */
+                               /* compilation not run result     */
+   }
+
+   *result=1;
+   return(err);
+  }
+  else
+  {
+   err=lexend(mode);
+   xremfile();
+  /* *result=ZRLEXERR; */
+   return(err);
+  }
+ }
+ return(err);
+}
+
+
+
+/* think about name not found, apart from real errors */
+
+os_error * addfiles(char * name,int remove)
+{
+ os_error * err;
+ fxstat     f;
+ char       temp[256];
+ int        code;
+ char     * p;
+ int        eof;
+ int        save;
+
+ err=fs_stat(name,&f.f);
+ if(!err && f.f.object)
+ {
+  fs_startscan();
+
+  strcpy(temp,name);
+  p=temp+strlen(temp);
+
+  while(1)
+  {
+   if(fs_nextitem(temp,&f,NULL,&eof)) break;
+   if(eof) break;
+   fs_savescan(&save);
+
+   if(f.f.object==1)
+   {
+    *p='.';
+    strcpy(p+1,f.name);
+
+    xaddfile(temp,0,1,&code,0,0);
+    if(remove && code) xremfile();
+
+    *p=0;
+   }
+
+   fs_loadscan(save);
+  }
+ }
+
+ return(err);
+}
+
+
+/* return 1==OK 0==ERROR */
+
+
+static int lastcode;
+
+
+int runscript(char * filename,int exec)
+{
+ int code;
+
+ xaddfile(filename,0,0,&code,0,0);
+ lastcode=code;
+ if(code && exec)
+ {
+  xrunmain(&code);
+  xremfile();
+  lastcode=0;
+ }
+ return(code);
+}
+
+
+
+void runscriptpost(void)
+{
+ int code;
+
+ if(lastcode)
+ {
+  xrunmain(&code);
+  xremfile();
+ }
+}
+
+
+
+#ifdef NEVER
+
+int xexecstuff(char * stuff,int rarg)
+{
+ int code;
+
+ xaddfile(stuff,rarg,1|(rarg?(1<<5):(1<<4)),&code);
+ if(code) xremfile();
+
+ return(code);
+}
+
+
+os_error * xexecstuff2(char * stuff,int rarg)
+{
+ int code;
+
+ xaddfile(stuff,rarg,1|(rarg?(1<<5):(1<<4)),&code);
+ if(code) xremfile();
+
+ if(!code) return(geterror(EREPORTED));
+ else      return(NULL);
+}
+
+#endif
+
+
+
+
+os_error * xexecstuff3(char * stuff,int rarg,int inval,int inval2)
+{
+ int code;
+
+ xaddfile(stuff,rarg,1|(rarg?(1<<5):(1<<4)),&code,inval,inval2);
+ if(code) xremfile();
+
+ if(!code) return(geterror(EREPORTED));
+ else      return(NULL);
+}
+
+
+
+
+
+os_error * xstart(void)
+{
+ os_error * err;
+
+ err=flex_alloc((flex_ptr)&prstack,PRSTACKCHUNK);
+ prstages=0;
+
+ if(!err) err=xsymstart();
+ if(!err) err=xstringstart();
+ if(!err) err=xcodestart();
+
+ return(err);
+}
+

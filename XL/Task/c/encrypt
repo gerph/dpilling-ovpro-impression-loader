@@ -1,0 +1,68 @@
+/*->c.encrypt */
+
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <stdio.h>
+
+
+#include "h.os"
+
+
+#include "h.err"
+#include "h.etc"
+
+#include "h.encrypt"
+
+
+
+extern char encrypt_block[];
+
+
+
+
+void encryptblock(char * d,char * s,int len,char * key)
+{
+ int klen;
+ int i;
+ int j;
+
+ klen=strlen(key);
+ i=j=0;
+
+ while(i<len)
+ {
+  *d=(*s)^(key[j]^i);
+  i++;
+  j++;
+  s++;
+  d++;
+  if(j>=klen) j=0;
+ }
+}
+
+
+
+
+void decryptblock(char * d,char * s,int len,char * key)
+{
+ encryptblock(d,s,len,key);
+}
+
+
+
+static int minus2=-2;
+
+void decryptresourceblock(char * block,int * len)
+{
+ if(encrypt_block[0])
+ {
+  if(!memcmp(block,&minus2,4))
+  {
+   *len=*len-4;
+   decryptblock(block,block+4,*len,encrypt_block);
+  }
+ }
+}
+
+

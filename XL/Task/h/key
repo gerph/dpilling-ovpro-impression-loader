@@ -1,0 +1,408 @@
+/*->h.key */
+
+
+#define isshift akbd_pollsh()
+#define isctrl  akbd_pollctl()
+#define isalt   akbd_pollalt()
+#define isother akbd_others()
+
+
+#define      PAGEUP       0x1B9F
+#define SHFT_PAGEUP       0xB8F
+#define CTRL_PAGEUP       0x7BF
+#define  ACT_PAGEUP       0xFBF
+#define CTSH_PAGEUP       0x13AF
+#define ACSH_PAGEUP       0x17AF
+
+
+#define      PAGEDOWN     0x1B9E
+#define SHFT_PAGEDOWN     0xB8E
+#define CTRL_PAGEDOWN     0x7BE
+#define  ACT_PAGEDOWN     0xFBE
+#define CTSH_PAGEDOWN     0x13AE
+#define ACSH_PAGEDOWN     0x17AE
+
+
+#define      CLEFT        0x18C
+#define      CRIGHT       0x18D
+#define      CDOWN        0x18E
+#define      CUP          0x18F
+
+#define SHFT_CLEFT        0x19C
+#define SHFT_CRIGHT       0x19D
+#define SHFT_CDOWN        0x19E
+#define SHFT_CUP          0x19F
+
+#define CTRL_CLEFT        0x1AC
+#define CTRL_CRIGHT       0x1AD
+#define CTRL_CDOWN        0x1AE
+#define CTRL_CUP          0x1AF
+
+
+#define ACT_CLEFT         0xDAC
+#define ACT_CRIGHT        0xDAD
+#define ACT_CDOWN         0xDAE
+#define ACT_CUP           0xDAF
+
+
+#define CTSH_CLEFT        0x1BC
+#define CTSH_CRIGHT       0x1BD
+#define CTSH_CDOWN        0x1BE
+#define CTSH_CUP          0x1BF
+
+
+#define ACSH_CLEFT        0x15BC
+#define ACSH_CRIGHT       0x15BD
+#define ACSH_CDOWN        0x15BE
+#define ACSH_CUP          0x15BF
+
+
+
+#define      COPY         0x18B
+#define SHFT_COPY         0x19B
+#define CTRL_COPY         0x1AB
+#define CTSH_COPY         0x1BB
+#define  ACT_COPY         0xDAB
+#define ACSH_COPY         0x15BB
+
+
+#define      TAB          0x18A
+#define SHFT_TAB          0x19A
+#define CTRL_TAB          0x1AA
+#define ACT_TAB           0xDAA
+#define CTSH_TAB          0x1BA
+#define ACSH_TAB          0x15BA
+
+
+#define      INSERT       0x1CD
+#define SHFT_INSERT       0x1DD
+#define CTRL_INSERT       0x1ED
+#define CTSH_INSERT       0x1FD
+#define  ACT_INSERT       0xDED
+#define ACSH_INSERT       0x15FD
+
+
+#define CTRL_A            0x2401
+#define CTRL_B            0x2402
+#define CTRL_C            0x2403
+#define CTRL_D            0x2404
+#define CTRL_E            0x2405
+#define CTRL_F            0x2406
+#define CTRL_G            0x2407
+#define CTRL_H            0x2408
+#define CTRL_I            0x2409
+#define CTRL_J            0x240A
+#define CTRL_K            0x240B
+#define CTRL_L            0x240C
+#define CTRL_M            0x240D
+#define CTRL_N            0x240E
+#define CTRL_O            0x240F
+#define CTRL_P            0x2410
+#define CTRL_Q            0x2411
+#define CTRL_R            0x2412
+#define CTRL_S            0x2413
+#define CTRL_T            0x2414
+#define CTRL_U            0x2415
+#define CTRL_V            0x2416
+#define CTRL_W            0x2417
+#define CTRL_X            0x2418
+#define CTRL_Y            0x2419
+#define CTRL_Z            0x241A
+
+
+#define BCTRL_I           0x9
+#define BCTRL_R           0x12
+#define BCTRL_P           0x10
+
+
+
+
+
+
+#define CTRL_ASTERIX      0x438
+#define CTRL_SLASH        0x42f
+#define CTRL_HASH         0x433
+
+#define ACT_ASTERIX       0xC38
+#define ACT_SLASH         0xC2f
+#define ACT_HASH          0xC33
+
+
+#define CTRL_LSQUARE      0x241B
+#define ACT_LSQUARE       0x2C1B
+#define CTSH_LSQUARE      0x301B
+#define ACSH_LSQUARE      0x341B
+
+#define CTRL_RSQUARE      0x41D
+#define ACT_RSQUARE       0xC1D
+#define CTSH_RSQUARE      0x101D
+#define ACSH_RSQUARE      0x141D
+
+
+
+#define CTSH_I            0x3009
+#define ACSH_I            0x3409
+
+#define CTSH_K            0x300b
+#define ACSH_K            0x340b
+
+
+#define CTSH_P            0x3010
+#define ACSH_P            0x3410
+
+#define CTSH_Q            0x3011
+#define ACSH_Q            0x3411
+
+#define CTSH_S            0x3013
+#define ACSH_S            0x3413
+
+
+#define CTSH_X            0x3018
+#define ACSH_X            0x3418
+
+
+
+
+#define ACT_G             0x2C07
+#define ACT_I             0x2C09
+#define ACT_M             0x2C0D
+#define ACT_R             0x2C12
+
+
+
+#define ESCAPE            0x1B
+
+             
+
+#define      DEL          0x7F
+#define CTRL_DEL          0x47F
+#define CTSH_DEL          0x107F
+#define SHFT_DEL          0x87F
+#define  ACT_DEL          0xC7F
+#define ACSH_DEL          0x147F
+
+
+#define      HOME         0x1A1E
+#define CTRL_HOME         0x61E
+#define  ACT_HOME         0xE1E
+#define SHFT_HOME         0xA1E
+
+
+#define      RETURN       0xD
+#define SHFT_RETURN       0x80D
+#define CTRL_RETURN       0x40D
+#define  ACT_RETURN       0xC0D
+
+
+#define      PRINTK       0x180
+#define SHFT_PRINTK       0x190
+#define CTRL_PRINTK       0x1A0
+#define  ACT_PRINTK       0xDA0
+
+
+
+
+#define F1           0x181
+#define F2           0x182
+#define F3           0x183
+#define F4           0x184
+#define F5           0x185
+#define F6           0x186
+#define F7           0x187
+#define F8           0x188
+#define F9           0x189
+#define F10          0x1CA
+#define F11          0x1CB
+#define F12          0x1CC
+
+
+
+
+#define SHFT_F1      0x191
+#define SHFT_F2      0x192
+#define SHFT_F3      0x193
+#define SHFT_F4      0x194
+#define SHFT_F5      0x195
+#define SHFT_F6      0x196
+#define SHFT_F7      0x197
+#define SHFT_F8      0x198
+#define SHFT_F9      0x199
+#define SHFT_F10     0x1DA
+#define SHFT_F11     0x1DB
+#define SHFT_F12     0x1DC
+
+
+
+
+
+#define CTRL_F1           0x1A1
+#define CTRL_F2           0x1A2
+#define CTRL_F3           0x1A3
+#define CTRL_F4           0x1A4
+#define CTRL_F5           0x1A5
+#define CTRL_F6           0x1A6
+#define CTRL_F7           0x1A7
+#define CTRL_F8           0x1A8
+#define CTRL_F9           0x1A9
+#define CTRL_F10          0x1EA
+#define CTRL_F11          0x1EB
+#define CTRL_F12          0x1EC
+
+
+
+
+#define CTSH_F1           0x1B1
+#define CTSH_F2           0x1B2
+#define CTSH_F3           0x1B3
+#define CTSH_F4           0x1B4
+#define CTSH_F5           0x1B5
+#define CTSH_F6           0x1B6
+#define CTSH_F7           0x1B7
+#define CTSH_F8           0x1B8
+#define CTSH_F9           0x1B9
+#define CTSH_F10          0x1FA
+#define CTSH_F11          0x1FB
+#define CTSH_F12          0x1FC
+
+
+
+
+#define  ACT_F1           0xDA1
+#define  ACT_F2           0xDA2
+#define  ACT_F3           0xDA3
+#define  ACT_F4           0xDA4
+#define  ACT_F5           0xDA5
+#define  ACT_F6           0xDA6
+#define  ACT_F7           0xDA7
+#define  ACT_F8           0xDA8
+#define  ACT_F9           0xDA9
+#define  ACT_F10          0xDEA
+#define  ACT_F11          0xDEB
+#define  ACT_F12          0xDEC
+
+
+
+#define  ACT_SL           0xE0E
+#define  ACT_BREAK        0xE1B
+
+
+
+#define KASTERIX          0x1a2a
+#define KHASH             0x1a23
+#define KMINUS            0x1a2d
+#define KPLUS             0x1a2b
+#define KSLASH            0x1a2f
+#define ENTER             0x1a0d
+#define KPOINT            0x1a2e
+#define K0                0x1a30
+#define K1                0x1a31
+#define K2                0x1a32
+#define K3                0x1a33
+#define K4                0x1a34
+#define K5                0x1a35
+#define K6                0x1a36
+#define K7                0x1a37
+#define K8                0x1a38
+#define K9                0x1a39
+#define NUMLOCK           0x1a22
+
+
+#define CTRL_KASTERIX     0x62a
+#define CTRL_KHASH        0x623
+#define CTRL_KMINUS       0x62d
+#define CTRL_KPLUS        0x62b
+#define CTRL_KSLASH       0x62f
+
+#define CTRL_K0           0x630
+#define CTRL_K1           0x631
+#define CTRL_K2           0x632
+#define CTRL_K3           0x633
+#define CTRL_K4           0x634
+#define CTRL_K5           0x635
+#define CTRL_K6           0x636
+
+
+
+#define ACT_KASTERIX      0xe2a
+#define ACT_KHASH         0xe23
+#define ACT_KMINUS        0xe2d
+#define ACT_KPLUS         0xe2b
+#define ACT_KSLASH        0xe2f
+
+
+#define BACKSPACE         0x1a08
+#define CTRL_BACKSPACE    0x608
+#define  ACT_BACKSPACE    0xe08
+#define SHFT_BACKSPACE    0xa08
+#define CTSH_BACKSPACE    0x1208
+#define ACSH_BACKSPACE    0x1608
+
+
+#define SHFT_ENTER        0xa0d
+#define CTRL_MINUS        0x62d
+#define ACT_MINUS         0xe2d
+
+
+
+#define KEYNORM  (0<<8)
+#define KEYSHIFT (1<<8)
+#define KEYCTRL  (2<<8)
+#define KEYACT   (3<<8)
+#define KEYCTSH  (4<<8)
+#define KEYACSH  (5<<8)
+
+
+
+#define DIGIT1   17
+#define DIGIT2   18
+#define DIGIT3   19
+#define DIGIT4   20
+#define DIGIT5   21
+#define DIGIT6   22
+#define DIGIT7   23
+#define DIGIT8   24
+#define DIGIT9   25
+#define DIGIT0   26
+
+#define COMMAINDEX  82
+#define POINTINDEX  83
+#define SEMICOINDEX 68
+#define SQUOTEINDEX 69
+
+
+
+extern int    isbadfunc(int key);
+extern int    isfunc(int key);
+
+extern int    keycanonicaltype(char * string);
+extern int    keytype(char * string);
+extern int    keycode2canonical(int code);
+extern int    keycanonical2code(int ccode);
+extern char * keystringcanonical(int ccode);
+extern char * keylongstringcanonical(int ccode);
+extern char * keystring(int code);
+
+
+extern os_error * keyboard_on(int autorepeat);
+extern os_error * keyboard_off(void);
+
+/*
+extern os_error * keyaddkeyevent(keyfn fn,int handle,int userhandle);
+extern os_error * keyremkeyevent(keyfn fn,int handle,int userhandle);
+*/
+
+extern os_error * keypress1(int * key,int * pass,int * good);
+extern os_error * keypress2(int * key,int pass);
+
+
+
+#define KEYNUMLOCKKEY    0x1
+#define KEYBREAKKEY      0x2
+#define KEYAUTORATE      0x4
+#define KEYACTIONKEY     0x8
+#define KEYSCROLLLOCKKEY 0x10
+
+
+extern os_error * setkeyboardmode(int caps);
+extern os_error * initkeyboard(int caps);
+

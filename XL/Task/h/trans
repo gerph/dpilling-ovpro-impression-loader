@@ -1,0 +1,7 @@
+/*->h.trans */
+
+extern os_error * addtranstable(char * path,char * leaf);
+extern char     * transtoken(char * token);
+extern os_error * trans(char * buffer,int len);
+extern os_error * inittrans(void);
+extern os_error * tsprintf(int maxlen,char * string,char * format, ...);

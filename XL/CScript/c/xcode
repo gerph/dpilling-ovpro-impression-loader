@@ -1,0 +1,964 @@
+/*->c.xcode  */
+
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <signal.h>
+#include <ctype.h>
+#include <time.h>
+#include <locale.h>
+#include <stdarg.h>
+#include <setjmp.h>
+
+
+
+#include "h.os"
+#include "h.flex"
+#include "h.bbc"
+#include "h.werr"
+
+#include "h.bits"
+#include "h.trans"
+
+#include "h.xext"
+#include "h.xint"
+
+
+
+
+
+/*****************************************************************************/
+/* x assembler and exec */
+
+
+char   * xcodeheap;      /* heap used to store symbol table        */
+int      xcodesize;      /* pointer to first free location in heap */
+int    * stack;
+
+
+
+typedef struct cpustr
+{
+ int      sp;
+ int      r0;
+ int      r1;
+ int      r2;
+ int      fp;
+} cpustr;
+
+static cpustr cpu; 
+
+
+static jmp_buf zraisejmp;
+
+int  zruns;
+int  zlevel;
+
+
+static char * zerrmessages[MAXRUN]=
+{
+ "{ZDIVZ}",
+ "{ZFILE}",
+ "{ZUSER}",
+ "{ZNULL}",
+ "{ZMEM}"
+};
+
+
+void zraise(int errno, ...)
+{
+ va_list args;
+ char    v[128];
+ char    format[128];
+
+ strcpy(format,zerrmessages[errno]);
+ trans(format,sizeof(format));
+
+ va_start(args,errno);
+ vsprintf(v,format,args);
+
+ va_end(args);
+
+ if(errno!=ZEXIT) werr(0,"{ZERR}",v);
+
+ longjmp(zraisejmp,1);
+}
+
+
+void zreport(os_error * err)
+{
+ if(err)
+ {
+  report(err);
+  longjmp(zraisejmp,1);
+ }
+}
+
+
+/*
+
+void coredump(cpustr * cpu,int pc)
+{
+ printf("core dump at pc=%d\n",pc);
+ printf("r0=%d r1=%d r2=%d sp=%d fp=%d\n",
+                        cpu->r0,cpu->r1,cpu->r2,cpu->sp,cpu->fp);
+}
+
+ */
+
+
+
+
+/* has the script been stopped ? */
+
+int scriptpoll(void)
+{
+ if(bbc_inkey(-113) && bbc_inkey(-2)) 
+ {
+  zruns=0;
+  fx(21,0,0);
+ }
+ return(!zruns);
+}
+
+
+
+
+static void xexecs(int pc)
+{
+ int   code;
+ int   off;
+ int   bytes;
+ int   oldpc;
+ int * p;
+ int   cases;
+ int   deflt;
+ int   lo;
+ int   hi;
+ int   probe;
+ int   val;
+ int   cycles;
+
+ cycles=0;
+
+ while(zruns)
+ {
+  oldpc=pc;
+  code=xcodeheap[pc++];
+  bytes=code>>6;
+  if(cycles++==0x1000)
+  {
+   if(scriptpoll()) break;
+   cycles=0;
+  }
+
+  if(bytes)
+  {
+   code&=0x3F;
+
+   if(bytes==1)
+   {
+    off=xcodeheap[pc];
+    if(off & 0x80) off|=0xFFFFFF00;
+    pc+=1;
+   }
+   else
+   if(bytes==2)
+   {
+    off=xcodeheap[pc]+(xcodeheap[pc+1]<<8);
+    if(off & 0x8000) off|=0xFFFF0000;
+    pc+=2;
+   }
+   else
+   if(bytes==3)
+   {
+    off=xcodeheap[pc]+(xcodeheap[pc+1]<<8)+
+        (xcodeheap[pc+2]<<16)+(xcodeheap[pc+3]<<24);
+    pc+=4;
+   }
+
+   switch(code)
+   {
+    case  ELDC0:
+                cpu.r0=xptr(off)->val;
+                break;
+
+     case ELDC1:
+                cpu.r1=xptr(off)->val;
+                break;
+
+    case  ELDF0:
+                cpu.r0=stack[cpu.fp+off];
+                break;
+
+    case  ELDF1:
+                cpu.r1=stack[cpu.fp+off];
+                break;
+
+
+    case   ESTC:
+                xptr(off)->val=cpu.r0;
+                break;
+
+      case SSTC:
+                copystring(xptr(off)->val,cpu.r0);
+                break;
+
+   case SADDSTC:
+                catstrings(xptr(off)->val,cpu.r0);
+                break;
+
+   case EADDSTC:
+                cpu.r0=(xptr(off)->val+=cpu.r0);
+                break;
+
+   case ESUBSTC:
+                cpu.r0=(xptr(off)->val-=cpu.r0);
+                break;
+
+
+   case ESSLSTC:
+                cpu.r0=(xptr(off)->val<<=cpu.r0);
+                break;
+
+   case ESSRSTC:
+                cpu.r0=(xptr(off)->val>>=cpu.r0);
+                break;
+
+   case EMULSTC:
+                cpu.r0=(xptr(off)->val*=cpu.r0);
+                break;
+
+   case EDIVSTC:
+                if(!cpu.r0) zraise(ZDIVZERO);
+                cpu.r0=(xptr(off)->val/=cpu.r0);
+                break;
+
+   case EMODSTC:
+                if(!cpu.r0) zraise(ZDIVZERO);
+                cpu.r0=(xptr(off)->val%=cpu.r0);
+                break;
+
+   case EANDSTC:
+                cpu.r0=(xptr(off)->val&=cpu.r0);
+                break;
+
+   case EORRSTC:
+                cpu.r0=(xptr(off)->val|=cpu.r0);
+                break;
+
+   case EXORSTC:
+                cpu.r0=(xptr(off)->val^=cpu.r0);
+                break;
+
+
+    case EBPPSTC:
+                cpu.r0=(xptr(off)->val=xptr(off)->val+1);
+                break;
+
+    case EBMMSTC:
+                cpu.r0=(xptr(off)->val=xptr(off)->val-1);
+                break;
+
+    case EAPPSTC:
+                cpu.r0=xptr(off)->val;
+                xptr(off)->val=cpu.r0+1;
+                break;
+
+    case EAMMSTC:
+                cpu.r0=xptr(off)->val;
+                xptr(off)->val=cpu.r0-1;
+                break;
+
+    case   ESTF:
+                stack[cpu.fp+off]=cpu.r0;
+                break;
+
+      case SSTF:
+                copystring(stack[cpu.fp+off],cpu.r0);
+                break;
+
+   case SADDSTF:
+                catstrings(stack[cpu.fp+off],cpu.r0);
+                break;
+
+     case SPULL:
+                stringpull(off,0);
+                break;
+
+    case SPULLX:
+                stringpull(off,1);
+                break;
+
+   case EADDSTF:
+                cpu.r0=(stack[cpu.fp+off]+=cpu.r0);
+                break;
+
+   case ESUBSTF:
+                cpu.r0=(stack[cpu.fp+off]-=cpu.r0);
+                break;
+
+   case ESSLSTF:
+                cpu.r0=(stack[cpu.fp+off]<<=cpu.r0);
+                break;
+
+
+   case ESSRSTF:
+                cpu.r0=(stack[cpu.fp+off]>>=cpu.r0);
+                break;
+
+
+   case EMULSTF:
+                cpu.r0=(stack[cpu.fp+off]*=cpu.r0);
+                break;
+
+   case EDIVSTF:
+                if(!cpu.r0) zraise(ZDIVZERO);
+                cpu.r0=(stack[cpu.fp+off]/=cpu.r0);
+                break;
+
+   case EMODSTF:
+                if(!cpu.r0) zraise(ZDIVZERO);
+                cpu.r0=(stack[cpu.fp+off]%=cpu.r0);
+                break;
+
+   case EANDSTF:
+                cpu.r0=(stack[cpu.fp+off]&=cpu.r0);
+                break;
+
+   case EORRSTF:
+                cpu.r0=(stack[cpu.fp+off]|=cpu.r0);
+                break;
+
+   case EXORSTF:
+                cpu.r0=(stack[cpu.fp+off]^=cpu.r0);
+                break;
+
+   case EAPPSTF:
+                cpu.r0=(stack[cpu.fp+off]++);
+                break;
+
+   case EAMMSTF:
+                cpu.r0=(stack[cpu.fp+off]--);
+                break;
+
+
+   case EBPPSTF:
+                cpu.r0=(++stack[cpu.fp+off]);
+                break;
+
+   case EBMMSTF:
+                cpu.r0=(--stack[cpu.fp+off]);
+                break;
+
+
+
+   case    EJSR:
+                xexecs(off);
+                break;
+
+     case EJSRX:
+                cpu.r0=((extfn)off)(cpu.fp);           /* bang */
+                break;
+
+   case ELLCON0:
+                cpu.r0=off;
+                break;
+
+   case ELLCON1:
+                cpu.r1=off;
+                break;
+
+
+   case    EBNE:
+                if(cpu.r0!=0) pc=oldpc+off;
+                break;
+
+    case   EBEQ:
+                if(cpu.r0==0) pc=oldpc+off;
+                break;
+
+    case   EJMP:
+                pc=oldpc+off;
+                break;
+
+     case EFPSP:
+                cpu.fp=cpu.sp+off;
+                break;
+
+     case ESPSP:
+                if(off>0)
+                {
+                 if(flex_chunk((flex_ptr)&stack,
+                             4*(cpu.sp+off),XSTACKCHUNK)) zraise(ZMEM,"");
+                }
+                cpu.sp+=off;
+                if(off<0) flex_chunk((flex_ptr)&stack,4*cpu.sp,XSTACKCHUNK);
+                break;
+
+   case ESWITCH: /* off is offset of int block */
+                 /* int default: offset        */
+                 /* int how many               */
+                 /* then int val, int offset   */
+
+                p=(int*)&xcodeheap[oldpc+off];
+                deflt=*p++;
+                cases=*p++;
+
+                lo=0;
+                hi=cases-1;
+
+                while(1)
+                {
+                 if(lo>hi)
+                 {
+                  pc=oldpc+deflt;
+                  break;
+                 }
+
+                 probe=(lo+hi)/2;
+                 val=p[probe*2];
+
+                 if(val==cpu.r0)
+                 {
+                  pc=oldpc+p[probe*2+1];
+                  break;
+                 }
+                 if(val>cpu.r0) hi=probe-1;
+                 else           lo=probe+1;
+                }
+                break;         /* end of ESWITCH */
+
+   }
+  }
+  else
+  switch(code)
+  {
+   case    ERTS:
+
+                return;
+                break;
+
+     case  EADD:
+                cpu.r0+=cpu.r1;
+                break;
+
+     case  ESUB:
+                cpu.r0=cpu.r1-cpu.r0;
+                break;
+
+   case    EMUL:
+                cpu.r0*=cpu.r1;
+                break;
+
+       case ESL:
+                cpu.r0=cpu.r1<<cpu.r0;
+                break;
+
+       case ESR:
+                cpu.r0=cpu.r1>>cpu.r0;
+                break;
+
+     case  EDIV:
+                if(!cpu.r0) zraise(ZDIVZERO);
+                cpu.r0=cpu.r1/cpu.r0;
+                break;
+
+     case  EMOD:
+                if(!cpu.r0) zraise(ZDIVZERO);
+                cpu.r0=cpu.r1 % cpu.r0;
+                break;
+
+     case  EXOR:
+                cpu.r0^=cpu.r1;
+                break;
+
+     case  EAND:
+                cpu.r0&=cpu.r1;
+                break;
+
+     case  EORR:
+                cpu.r0|=cpu.r1;
+                break;
+
+    case   ENEG:
+                cpu.r0=-cpu.r0;
+                break;
+
+
+    case    E2C:
+                cpu.r0=~cpu.r0;
+                break;
+
+    case   ENOT:
+                cpu.r0=!cpu.r0;
+                break;
+
+
+   case   ELLGT:
+                cpu.r0=(cpu.r1>cpu.r0);
+                break;
+
+   case   ELLGE:
+                cpu.r0=(cpu.r1>=cpu.r0);
+                break;
+
+   case   ELLLT:
+                cpu.r0=(cpu.r1<cpu.r0);
+                break;
+
+   case   ELLLE:
+                cpu.r0=(cpu.r1<=cpu.r0);
+                break;
+
+   case   ELLEQ:
+                cpu.r0=(cpu.r1==cpu.r0);
+                break;
+
+    case  ELLNE:
+                cpu.r0=(cpu.r0!=cpu.r1);
+                break;
+
+
+
+   case   SLLGT:
+                cpu.r2=cpu.r0;
+                cpu.r0=cmpstrings(cpu.r0,cpu.r1)<0;
+                break;
+
+   case   SLLGE:
+                cpu.r2=cpu.r0;
+                cpu.r0=cmpstrings(cpu.r0,cpu.r1)<=0;
+                break;
+
+   case   SLLLT:
+                cpu.r2=cpu.r0;
+                cpu.r0=cmpstrings(cpu.r0,cpu.r1)>0;
+                break;
+
+   case   SLLLE:
+                cpu.r2=cpu.r0;
+                cpu.r0=cmpstrings(cpu.r0,cpu.r1)>=0;
+                break;
+
+   case   SLLEQ:
+                cpu.r2=cpu.r0;
+                cpu.r0=cmpstrings(cpu.r0,cpu.r1)==0;
+                break;
+
+    case  SLLNE:
+                cpu.r2=cpu.r0;
+                cpu.r0=cmpstrings(cpu.r0,cpu.r1)!=0;
+                break;
+
+
+
+   case  EPUSH0:
+                if(flex_chunk((flex_ptr)&stack,4*(cpu.sp+1),XSTACKCHUNK))
+                                                              zraise(ZMEM,"");
+                stack[cpu.sp++]=cpu.r0;
+                break;
+
+   case  EPUSH1:
+                if(flex_chunk((flex_ptr)&stack,4*(cpu.sp+1),XSTACKCHUNK))
+                                                              zraise(ZMEM,"");
+                stack[cpu.sp++]=cpu.r1;
+                break;
+
+   case  EPULL0:
+                cpu.r0=stack[--cpu.sp];
+                flex_chunk((flex_ptr)&stack,4*cpu.sp,XSTACKCHUNK);
+                break;
+
+   case  EPULL1:
+                cpu.r1=stack[--cpu.sp];
+                flex_chunk((flex_ptr)&stack,4*cpu.sp,XSTACKCHUNK);
+                break;
+
+   case EPUSHFP:
+                if(flex_chunk((flex_ptr)&stack,4*(cpu.sp+1),XSTACKCHUNK))
+                                                              zraise(ZMEM,"");
+                stack[cpu.sp++]=cpu.fp;
+                break;
+
+   case EPULLFP:
+                cpu.fp=stack[--cpu.sp];
+                flex_chunk((flex_ptr)&stack,4*cpu.sp,XSTACKCHUNK);
+                break;
+
+     case SDUP0:
+                cpu.r0=duplicatestring(cpu.r0);
+                break;
+                                                                                     case SDUP1:
+                cpu.r1=duplicatestring(cpu.r1);
+                break;
+
+      case SADD:
+                catstrings(cpu.r1,cpu.r0);
+                cpu.r2=cpu.r0;
+                cpu.r0=cpu.r1;
+                break;
+
+    case SVOID0:
+                rmstring(cpu.r0);
+                break;
+
+    case SVOID1:
+                rmstring(cpu.r1);
+                break;
+
+    case SVOID2:
+                rmstring(cpu.r2);
+                break;
+
+
+       case SSL:
+                shiftstringleft(cpu.r1,cpu.r0);
+                cpu.r2=cpu.r0;
+                cpu.r0=cpu.r1;
+                break;
+
+
+       case SSR:
+                shiftstringright(cpu.r1,cpu.r0);
+                cpu.r2=cpu.r0;
+                cpu.r0=cpu.r1;
+                break;
+
+   case SCREATE:
+                cpu.r0=createstring("");
+                break;
+
+    case SUPPER:
+                upperstring(cpu.r0);
+                break;
+
+    case SLOWER:
+                lowerstring(cpu.r0);
+                break;
+
+     case SSWAP:
+                swopstring(cpu.r0);
+                break;
+
+      case SDIV:
+                cpu.r2=cpu.r0;
+                cpu.r0=divstring(cpu.r1,cpu.r0);
+                break;
+
+      case SMOD:
+                cpu.r2=cpu.r0;
+                cpu.r0=modstring(cpu.r1,cpu.r0);
+                break;
+
+    case SMUL10:
+                mulstring(cpu.r1,cpu.r0);
+                cpu.r0=cpu.r1;
+                break;
+
+    case SMUL01:
+                mulstring(cpu.r0,cpu.r1);
+                break;
+
+  }
+ }
+}
+
+
+
+
+static int preexec(char * name,cpustr * tcpu,int * sym,
+                                             int * nstr,int * internal)
+{
+ *sym=xfindi(name,internal);
+ if((*sym)==XSNOTFOUND) return(0);
+
+ *tcpu=cpu;
+ *nstr=nostrings;
+
+ if(flex_chunk((flex_ptr)&stack,4*(cpu.sp+2),XSTACKCHUNK)) return(0);
+
+ cpu.fp=cpu.sp;
+
+ return(1);
+}
+
+
+
+static void execute(int sym,int internal)
+{
+ jmp_buf  savejmp;
+ int      pc;
+
+ zlevel++;
+ zruns=1;
+
+ memcpy(savejmp,zraisejmp,sizeof(zraisejmp));
+
+ if(!setjmp(zraisejmp))
+ {
+  if(internal)
+  {
+/* dprintf(0,"internal"); */
+
+   cpu.r0=((extfn)((fndefn*)sym)->fn)(cpu.fp); 
+  }
+  else
+  {
+   pc=xptr(sym)->val;
+   xexecs(pc);
+  }
+ }
+
+ memcpy(zraisejmp,savejmp,sizeof(zraisejmp));
+
+ zlevel--;
+}
+
+
+
+static void postexec(cpustr * tcpu,int nstr)
+{
+ cpu=*tcpu;
+ flex_chunk((flex_ptr)&stack,4*cpu.sp,XSTACKCHUNK);
+ setstrings(nstr);
+
+ if(!zruns && zlevel==0)
+ {
+  errorbox("Script stopped");
+  zruns=1;
+ }
+}
+
+
+
+
+/* commences execution at given point */
+
+/* there is a problem...                                     */
+/* if you call a function with the wrong values on the stack */
+/* then local variables will get wrong values                */
+/* internal functions should be OK                           */
+
+
+os_error * xexec(char * name,int * result,char * p,...)
+{
+ os_error * err;
+ va_list    args;
+ cpustr     tcpu;
+ int        sym;
+ int        nstr;
+ int        sp;
+ int        internal;
+ int        argc;
+ int        argtype;
+ int        mode;
+ int        badcall;
+ int        fargc;
+
+ err=NULL;
+
+ va_start(args,p);
+
+ if(!preexec(name,&tcpu,&sym,&nstr,&internal))
+ {
+  *result=ZRNOTFOUND;
+ }
+ else
+ {
+  sp=cpu.sp;
+  argc=0;
+  badcall=0;
+  fargc=symfnargc(sym,internal);
+
+  if(*p=='K')
+  {
+   p++;
+   *args=(va_arg(args,void*));
+  }
+
+  while(*p)
+  {
+   argtype=symfntype(argc,sym,internal,&mode);
+
+   if(*p=='S')
+   {
+    stack[cpu.sp++]=createstring((char*)(va_arg(args,char*)));
+    if(argtype!=PSTR && !internal)
+    {
+     badcall=1;
+     break;
+    }
+   }
+   else
+   if(*p=='s')
+   {
+    stack[cpu.sp++]=(int)(va_arg(args,int));
+    if(argtype!=PSTR && !internal)
+    {
+     badcall=1;
+     break;
+    }
+   }
+   else
+   if(*p=='I')
+   {
+    stack[cpu.sp++]=(int)(va_arg(args,int));
+    if(argtype!=PINT && !internal)
+    {
+     badcall=1;
+     break;
+    }
+   }
+   if(*p=='/')
+   {
+    p++;
+    break;
+   }
+   p++;
+
+   argc++;
+
+   if(argc>fargc && !internal)
+   {
+    badcall=1;
+    break;
+   }
+  }
+
+
+  if(!badcall)
+  {
+   execute(sym,internal);
+
+   if(zruns)
+   {
+    while(*p)
+    {
+     if(*p=='R')  /* function result */
+     {
+      *(int*)(va_arg(args,int*))=cpu.r0;
+     }
+     else
+     if(*p=='S')  /* return string */
+     {
+      strcpy((char*)(va_arg(args,char*)),stringptr(stack[sp++]));
+     }
+     else
+     if(*p=='V')  /* void result   */
+     {
+      sp++;
+     }
+     p++;
+    }
+   }
+
+   if(zruns) *result=ZRSUCCESS;
+   else      *result=ZRRUNERR;
+  }
+  else *result=ZRBADCALL;
+
+  postexec(&tcpu,nstr);
+ }
+
+ va_end(args);
+
+ return(err);
+}
+
+
+
+
+
+
+void xasm(int code,int offset)
+{
+ if(flex_chunk((flex_ptr)&xcodeheap,xcodesize+5,XCODECHUNK)) xraise(ERRMEM);
+
+ if(offset<128 && offset>-127)
+ {
+  xcodeheap[xcodesize++]=code|0x40;
+  xcodeheap[xcodesize++]=offset;
+ }
+ else
+ if(offset<0x8000 && offset>-0x7FFF)
+ {
+  xcodeheap[xcodesize++]=code|0x80;
+  xcodeheap[xcodesize++]=offset;
+  xcodeheap[xcodesize++]=offset>>8;
+ }
+ else
+ {
+  xcodeheap[xcodesize++]=code|0xC0;
+  xcodeheap[xcodesize++]=offset;
+  xcodeheap[xcodesize++]=offset>>8;
+  xcodeheap[xcodesize++]=offset>>16;
+  xcodeheap[xcodesize++]=offset>>24;
+ }
+}
+
+
+
+void xasmat(int code,int offset,int at)
+{
+ xcodeheap[at++]=code|0xC0;
+ xcodeheap[at++]=offset;
+ xcodeheap[at++]=offset>>8;
+ xcodeheap[at++]=offset>>16;
+ xcodeheap[at++]=offset>>24;
+}
+
+
+
+void xasmz(int code)                                          /* 1 */
+{
+ if(!flex_chunk((flex_ptr)&xcodeheap,xcodesize+1,XCODECHUNK))
+ {
+  xcodeheap[xcodesize++]=code;
+ }
+ else xraise(ERRMEM);
+}
+
+
+
+void xasmalign(void)
+{
+ if(!flex_chunk((flex_ptr)&xcodeheap,xcodesize+4,XCODECHUNK))     /* 4 */
+ {
+  if(xcodesize & 0x3) xcodesize+=4-(xcodesize & 0x3);
+ }
+ else xraise(ERRMEM);
+}
+
+
+
+void xasmwriteword(int word)
+{
+ int * p;
+
+ if(!flex_chunk((flex_ptr)&xcodeheap,xcodesize+4,XCODECHUNK))  /*  4 */
+ {
+  p=(int *)(&xcodeheap[xcodesize]);
+  *p=word;
+  xcodesize+=4;
+ }
+ else xraise(ERRMEM);
+}
+
+
+
+/* called once boots code segment */
+
+os_error * xcodestart(void)
+{
+ os_error * err;
+
+ err=flex_alloc((flex_ptr)&xcodeheap,0);
+ if(!err) err=flex_alloc((flex_ptr)&stack,0);
+ xcodesize=0;
+ cpu.sp=cpu.fp=0;
+
+ return(err);
+}
+

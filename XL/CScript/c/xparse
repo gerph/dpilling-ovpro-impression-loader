@@ -1,0 +1,1996 @@
+/*->c.xparse  */
+
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <signal.h>
+#include <ctype.h>
+#include <time.h>
+#include <locale.h>
+
+
+#include "h.os"
+
+#include "h.xext"
+#include "h.xint"
+
+
+
+
+/*****************************************************************************/
+/* parser - read through file and generate code */
+
+
+static void xneed(int token)
+{
+ char temp[32];
+
+ if(current!=token)
+ {
+  strcpy(temp,lexstring(token));
+  xraise(ERRMISSING,temp,lexstring(current));
+ }
+
+ nexttoken();
+}
+
+
+
+
+
+
+typedef struct xsp
+{
+ int val;             /* constants value, or id symtab address */
+ int type;            /* void/int/string                       */
+ int kind;            /* unknown/left/const/expression         */
+ int mode;            /* global/local/fn/extern fn             */
+ int offset;          /* memory location                       */
+} xsp;
+
+
+
+
+static void xneedint(xsp * left)
+{
+ if(left->type!=PINT) xraise(ERRWRONGTYPE);
+}
+
+static void xneedint2(xsp * left,xsp * right)
+{
+ if(left->type!=right->type || left->type!=PINT) xraise(ERRWRONGTYPE);
+}
+
+
+
+#define MAXSWITCH 128
+
+
+typedef struct selblk
+{
+ int val;
+ int offset;
+} selblk;
+
+
+
+typedef struct brkblk
+{
+ int      inuse;        
+ int      loopstart;      /* where a continue goes to */
+ int      loopexit;       /* where a break goes to    */
+ int      offset;         /* stack offset on entry    */
+ selblk * selector;
+ int      cases;
+ int      count;
+} brkblk;
+
+
+
+
+
+
+static brkblk brkblock;      /* contains info on current loop    */
+static int    fnoffset;      /* current offset for function vars */
+static int    fnloffset;     /* offset of local fn vars          */
+static int    fntype;        /* type of this function            */
+static int    scount;        /* count of strings pushed          */
+static int    slcount;       /* count of local strings pushed    */
+
+
+static void mxasm(int op1,int op2,xsp * var) 
+{
+ if(var->mode==PSTACK || var->mode==PREF) xasm(op2,var->offset);
+ else                                     xasm(op1,var->offset);
+}
+
+
+
+
+static void mxload0(xsp * left)
+{
+ if(left->kind==PCONST)  xasm(ELLCON0,left->val);
+ else
+ if(left->kind==PLEFT)
+ {
+  if(left->mode==PSTACK || left->mode==PREF) xasm(ELDF0,left->offset);
+  else                                       xasm(ELDC0,left->offset);
+ }
+}
+
+
+
+static void mxload1(xsp * left)
+{
+ if(left->kind==PCONST) xasm(ELLCON1,left->val);
+ else
+ if(left->kind==PLEFT)
+ {
+  if(left->mode==PSTACK || left->mode==PREF) xasm(ELDF1,left->offset);
+  else                                       xasm(ELDC1,left->offset);
+ }
+}
+
+
+
+static void mxloadlr(xsp * left,xsp * right)
+{
+ if(left->kind==PEXP)       xasmz(EPULL1);
+ else                       mxload1(left);
+ mxload0(right);
+}
+
+
+
+static void mxvoid0(xsp * left)
+{
+ if(left->kind==PEXP && left->type==PSTR) xasmz(SVOID0);
+}
+
+
+
+
+
+static void xlevel15(xsp * left);     /* forward */
+static void xlevel14(xsp * left);     /* forward */
+
+
+
+
+static void fncall(int sym,int ftype,int fmode,int fargc)
+{
+ int argc;
+ xsp left;
+ int sc;
+ int mode;
+
+/* dprintf(0,"sym=%d ftype=%d fmode=%d fargc=%d",sym,ftype,fmode,fargc); */
+
+ xneed('(');
+ argc=0;
+ sc=0;
+
+ xasmz(EPUSHFP);
+
+ if(current!=')')
+ {
+  while(1)
+  {
+   if(argc>=fargc) xraise(ERRWRONGARGS);
+
+   xlevel14(&left);
+ 
+   if(left.type!=symfntype(argc,sym,fmode==PXFN,&mode)) xraise(ERRBADARGS);
+
+   mxload0(&left);
+
+   if(left.type==PSTR)
+   {
+    if(mode!=PREF)
+    {
+     if(left.kind!=PEXP)
+     {
+      xasmz(SDUP0);
+     }
+     sc++;
+    }
+    else
+    {
+     if(left.kind==PEXP) sc++;
+    }
+   }
+
+   xasmz(EPUSH0);
+
+   argc++;
+   if(current!=',') break;
+   nexttoken();
+  }
+ }
+
+
+ if(argc!=fargc) xraise(ERRWRONGARGS);
+
+ xneed(')');
+
+ /* pushed args onto stack, now have to generate call sequence */
+
+ xasm(EFPSP,-argc);
+
+
+ if(fmode==PFN)
+ {
+  xasm(EJSR,(xptr(sym))->val);
+ }
+ else
+ {
+  xasm(EJSRX,(int)(((fndefn*)sym)->fn));
+ }
+
+
+ /* can now unwind stack */
+ /* protecting r0 */
+
+ if(sc)
+ {
+  if(ftype==PSTR) xasm(SPULLX,sc);
+  else            xasm(SPULL,sc);
+ }
+
+ xasm(ESPSP,-argc);
+
+ xasmz(EPULLFP);
+}
+
+
+
+
+/* lowest level - highest precedence                            */
+/* should be constant numbers, function calls, constant strings */
+
+
+static void xlevel0(xsp * left)
+{
+ int      sym;
+ int      internal;
+ symstr * sx;
+
+/* dprintf(0,"level0 in current=%d",current); */
+
+ if(current==TID)
+ {
+  sym=xfindi(tokstart,&internal);
+  if(sym==XSNOTFOUND) xraise(ERRUNKNOWNID,tokstart);
+  nexttoken();
+
+  if(internal)    /* internal function */
+  {
+   left->type=((fndefn*)sym)->type;
+   left->kind=PEXP;
+   left->mode=PXFN;
+   left->val=0;
+   left->offset=0;
+   fncall(sym,left->type,PXFN,((fndefn*)sym)->argc);
+  }
+  else
+  {
+   sx=xptr(sym);
+   left->type=sx->type;
+   left->mode=sx->mode;
+   left->kind=PLEFT;
+   if(left->mode==PSTACK || left->mode==PREF) left->offset=sx->val;
+   else                                       left->offset=sym;
+
+   left->val=sym;
+
+   if(sx->mode==PFN)
+   {
+    fncall(sym,left->type,PFN,sx->argc);
+    left->kind=PEXP;
+   }
+  }
+ }
+ else
+ if(current==TNUMBER || current==TNULL)
+ {
+  left->type=PINT;
+  left->kind=PCONST;
+  if(current==TNULL) left->val=0;
+  else               left->val=lexn;
+  nexttoken();
+ }
+ else
+ if(current==TCSTRING)
+ {
+  left->type=PSTR;
+  left->kind=PCONST;
+  left->val=createstringr(&tokstart);
+  nexttoken();
+ }
+
+
+/* dprintf(0,"level0 out"); */
+}
+
+
+
+/* () []  -> . */
+
+static void xlevel1(xsp * left)
+{
+ if(current=='(')
+ {
+  nexttoken();
+  xlevel15(left);
+  xneed(')');                   /* better be ) */
+ }
+ else xlevel0(left);
+}
+
+
+
+/* ! ~ ++ -- +-(unary) * & sizeof */
+
+static void xlevel2(xsp * left)
+{
+ int savetoken;
+
+ if(current=='!' || current=='~' || current=='-' || current=='+')
+ {
+  savetoken=current;
+  nexttoken();
+
+  xlevel1(left);
+
+  if(left->type==PSTR)
+  {
+   if(left->kind==PCONST)
+   {
+    if(savetoken=='+') upperstring(left->val);
+    else
+    if(savetoken=='-') lowerstring(left->val);
+    else
+    if(savetoken=='~') swopstring(left->val);
+    else               xraise(ERRWRONGTYPE);
+   }
+   else
+   {
+    if(left->kind==PLEFT)
+    {
+     mxasm(ELDC0,ELDF0,left);
+     xasmz(SDUP0);
+    }
+
+    if(savetoken=='+') xasmz(SUPPER);
+    else
+    if(savetoken=='-') xasmz(SLOWER);
+    else
+    if(savetoken=='~') xasmz(SSWAP);
+    else               xraise(ERRWRONGTYPE);
+
+    left->kind=PEXP;
+   }
+  }
+  else
+  {
+   if(left->kind==PCONST)
+   {
+    switch(savetoken)
+    {
+     case '!':
+              left->val=!left->val;
+              break;
+
+     case '~':
+              left->val=~left->val;
+              break;
+
+     case '-':
+              left->val=-left->val;
+              break;
+    }
+   }
+   else
+   {
+    if(left->kind==PLEFT)  mxasm(ELDC0,ELDF0,left);
+
+    switch(savetoken)
+    {
+      case '!':
+               xasmz(ENOT);
+               break;
+
+      case '~':
+               xasmz(E2C);
+               break;
+
+      case '-':
+               xasmz(ENEG);
+               break;
+
+    }
+    left->kind=PEXP;
+   }
+  }
+ }
+ else
+ if(current==TPP || current==TMM)
+ {
+  savetoken=current;
+  nexttoken();
+
+  xlevel1(left);
+  xneedint(left);
+
+  if(left->kind!=PLEFT) xraise(ERRNEEDLVAL);
+
+  if(savetoken==TPP) mxasm(EBPPSTC,EBPPSTF,left);
+  else               mxasm(EBMMSTC,EBMMSTF,left);
+
+  left->kind=PEXP;
+ }
+ else
+ {
+  xlevel1(left);
+  if(current==TPP || current==TMM)
+  {
+   if(left->kind!=PLEFT) xraise(ERRNEEDLVAL);
+   xneedint(left);
+
+   if(current==TPP) mxasm(EAPPSTC,EAPPSTF,left);
+   else             mxasm(EAMMSTC,EAMMSTF,left);
+
+   left->kind=PEXP;
+   nexttoken();
+  }
+ }
+}
+
+
+
+
+/*   *  /  %   */
+
+static void xlevel3(xsp * left)
+{
+ xsp      right;
+ int      savetok;
+
+ xlevel2(left);  
+
+ while(current=='*' || current=='/' || current=='%')
+ {
+  savetok=current;
+  nexttoken();
+
+  if(left->kind==PEXP) xasmz(EPUSH0);
+
+  xlevel2(&right);
+
+
+  if(savetok=='*')
+  {
+   if(left->type==PSTR && right.type==PSTR) xraise(ERRWRONGTYPE);
+  }
+  else
+  if(left->type!=right.type) xraise(ERRWRONGTYPE);
+ 
+
+  /* so either int int or string string or string * int or int * string */
+
+
+  if(left->kind==PCONST && right.kind==PCONST)
+  {
+   switch(savetok)
+   {
+    case '*':
+             if(left->type==PSTR) mulstring(left->val,right.val);
+             else
+             if(right.type==PSTR) 
+             {
+              mulstring(right.val,left->val);
+              left->val=right.val;
+              left->type=PSTR;
+             }
+             else                 left->val=left->val*right.val;
+             break;
+
+    case '/':
+             if(left->type==PSTR) left->val=divstring(left->val,right.val);
+             else
+             {
+              if(!right.val) xraise(ERRDIVZERO);
+              left->val=left->val/right.val;
+             }
+             left->type=PINT;
+             break;
+
+    case '%':
+             if(left->type==PSTR) left->val=modstring(left->val,right.val);
+             else
+             left->val=left->val%right.val;
+             left->type=PINT;
+             break;
+   }
+  }
+  else
+  {
+   mxloadlr(left,&right);
+
+   switch(savetok)
+   {
+    case '*':
+             if(left->type==PSTR)
+             {
+              if(left->kind!=PEXP) xasmz(SDUP1);
+              xasmz(SMUL10);
+             }
+             else
+             if(right.type==PSTR)
+             {
+              if(right.kind!=PEXP) xasmz(SDUP0);
+              xasmz(SMUL01);
+              left->type=PSTR;
+             }
+             else xasmz(EMUL);
+             break;
+
+    case '/':
+             if(left->type==PINT) xasmz(EDIV);
+             else
+             {
+              xasmz(SDIV);
+              if(left->kind==PEXP) xasmz(SVOID1);
+              if(right.kind==PEXP) xasmz(SVOID2);
+              left->type=PINT;
+             }
+             break;
+
+    case '%':
+             if(left->type==PINT) xasmz(EMOD);
+             else
+             {
+              xasmz(SMOD);
+              if(left->kind==PEXP) xasmz(SVOID1);
+              if(right.kind==PEXP) xasmz(SVOID2);
+              left->type=PINT;
+             }
+             break;
+   }
+   left->kind=PEXP;
+  }
+ }
+}
+
+
+
+/* + - */
+
+static void xlevel4(xsp * left)
+{
+ xsp right;
+ int savetok;
+
+/* dprintf(0,"level 4");*/
+
+ xlevel3(left);
+
+ while(current=='+' || current=='-')
+ {
+  savetok=current;
+  nexttoken();
+
+  if(left->kind==PEXP) xasmz(EPUSH0);
+
+  xlevel3(&right);
+
+  if(left->type!=right.type || (left->type==PSTR && savetok=='-'))
+                                                         xraise(ERRWRONGTYPE);
+
+  if(left->kind==PCONST && right.kind==PCONST)
+  {
+   if(savetok=='+')
+   {
+    if(right.type==PSTR)
+    {
+     catstrings(left->val,right.val);
+     rmstring(right.val);
+    }
+    else            left->val=left->val+right.val;
+   }
+   else             left->val=left->val-right.val;
+  }
+  else
+  {
+   mxloadlr(left,&right);
+
+   if(savetok=='+')
+   {
+    if(right.type==PINT) xasmz(EADD);
+    else
+    if(right.type==PSTR)
+    {
+     if(left->kind!=PEXP) xasmz(SDUP1);
+     xasmz(SADD);
+     if(right.kind==PEXP) xasmz(SVOID2);
+    }
+   }
+   else             xasmz(ESUB);
+
+   left->kind=PEXP;
+  }
+ }
+
+/* dprintf(0,"level 4 ex"); */
+}
+
+
+
+
+/* << >> */
+
+static void xlevel5(xsp * left)
+{
+ xsp right;
+ int savetok;
+
+/* dprintf(0,"level 5"); */
+
+ xlevel4(left); 
+
+ while(current==TSL || current==TSR)
+ {
+  savetok=current;
+  nexttoken();
+
+  if(left->kind==PEXP) xasmz(EPUSH0);
+
+  xlevel4(&right);
+
+  if(left->type==PSTR && right.type==PINT)
+  {
+   if(left->kind==PCONST && right.kind==PCONST)
+   {
+    if(savetok==TSL) left->val=left->val<<right.val;
+    else             left->val=left->val>>right.val;
+   }
+   else
+   {
+    mxloadlr(left,&right);
+
+    if(left->kind!=PEXP) xasmz(SDUP1);
+
+    if(savetok==TSL) xasmz(SSL);
+    else             xasmz(SSR);
+
+    left->kind=PEXP;
+   }
+  }
+  else
+  if(left->type==PINT && right.type==PINT)
+  {
+   if(left->kind==PCONST && right.kind==PCONST)
+   {
+    if(savetok==TSL) left->val=left->val<<right.val;
+    else             left->val=left->val>>right.val;
+   }
+   else
+   {
+    mxloadlr(left,&right);
+
+    if(savetok==TSL) xasmz(ESL);
+    else             xasmz(ESR);
+
+    left->kind=PEXP;
+   }
+  }
+  else xraise(ERRWRONGTYPE);
+
+ }
+
+
+/* dprintf(0,"level5 ex"); */
+
+}
+
+
+/* < <= > >= */
+
+
+static void xlevel6(xsp * left)
+{
+ xsp right;
+ int savetok;
+ int temp;
+
+/* dprintf(0,"level 6"); */
+
+ xlevel5(left);
+
+ while(current==TLE || current==TGE || current=='>' || current=='<')
+ {
+  savetok=current;
+  nexttoken();
+
+  if(left->kind==PEXP) xasmz(EPUSH0);
+
+  xlevel5(&right);
+
+  if(left->type!=right.type) xraise(ERRWRONGTYPE);
+
+  if(left->kind==PCONST && right.kind==PCONST)
+  {
+   if(right.type==PSTR)
+   {
+    switch(savetok)
+    {
+     case '>':
+              temp=cmpstrings(left->val,right.val)>0;
+              break;
+
+     case '<':
+              temp=cmpstrings(left->val,right.val)<0;
+              break;
+
+     case TLE:
+              temp=cmpstrings(left->val,right.val)<=0;
+              break;
+
+     case TGE:
+              temp=cmpstrings(left->val,right.val)>=0;
+              break;
+    }
+
+    rmstring(left->val);
+    rmstring(right.val);
+    left->val=temp;
+    left->type=PINT;
+   }
+   else
+   switch(savetok)
+   {
+    case '>':
+             left->val=left->val>right.val;
+             break;
+
+    case '<':
+             left->val=left->val<right.val;
+             break;
+
+    case TLE:
+             left->val=left->val<=right.val;
+             break;
+
+    case TGE:
+             left->val=left->val>=right.val;
+             break;
+
+   }
+  }
+  else
+  {
+   mxloadlr(left,&right);
+
+   if(right.type==PSTR)
+   {
+    switch(savetok)
+    {
+     case '>':
+              xasmz(SLLGT);
+              break;
+
+     case '<':
+              xasmz(SLLLT);
+              break;
+
+     case TLE:
+              xasmz(SLLLE);
+              break;
+
+     case TGE:
+              xasmz(SLLGE);
+              break;
+    }
+
+    if(left->kind==PEXP) xasmz(SVOID1);
+    if(right.kind==PEXP) xasmz(SVOID2);
+    left->type=PINT;
+   }
+   else
+   switch(savetok)
+   {
+    case '>':
+             xasmz(ELLGT);
+             break;
+
+    case '<':
+             xasmz(ELLLT);
+             break;
+
+    case TLE:
+             xasmz(ELLLE);
+             break;
+
+    case TGE:
+             xasmz(ELLGE);
+             break;
+   }
+   left->kind=PEXP;
+  }
+
+
+ }
+
+
+/* dprintf(0,"level6 ex");  */
+
+}
+
+
+
+/* == != */
+
+static void xlevel7(xsp * left)
+{
+ xsp right;
+ int savetok;
+ int temp;
+
+/* dprintf(0,"level 7"); */
+
+ xlevel6(left);
+
+ while(current==TEQ || current==TNE)
+ {
+  savetok=current;
+  nexttoken();
+
+  if(left->kind==PEXP) xasmz(EPUSH0);
+
+  xlevel6(&right);
+
+  if(left->type!=right.type) xraise(ERRWRONGTYPE);
+
+  if(left->kind==PCONST && right.kind==PCONST)
+  {
+   if(right.type==PSTR)
+   {
+    if(savetok==TEQ) temp=cmpstrings(left->val,right.val)==0;
+    else             temp=cmpstrings(left->val,right.val)!=0;
+
+    rmstring(left->val);
+    rmstring(right.val);
+    left->val=temp;
+    left->type=PINT;
+   }
+   else
+   {
+    if(savetok==TEQ) left->val=left->val==right.val;
+    else             left->val=left->val!=right.val;
+   }
+  }
+  else
+  {
+   mxloadlr(left,&right);
+
+   if(right.type==PSTR)
+   {
+    if(savetok==TEQ) xasmz(SLLEQ);
+    else             xasmz(SLLNE);
+
+    if(left->kind==PEXP) xasmz(SVOID1);
+    if(right.kind==PEXP) xasmz(SVOID2);
+    left->type=PINT;
+   }
+   else
+   {
+    if(savetok==TEQ) xasmz(ELLEQ);
+    else             xasmz(ELLNE);
+   }
+
+   left->kind=PEXP;
+  }
+ }
+
+
+/* dprintf(0,"level7 ex"); */
+
+}
+
+
+
+
+
+/* & arithmetic and */
+
+static void xlevel8(xsp * left)
+{
+ xsp right;
+
+/* dprintf(0,"level 8"); */
+
+ xlevel7(left);
+
+ while(current=='&')
+ {
+  nexttoken();
+
+  if(left->kind==PEXP) xasmz(EPUSH0);
+
+  xlevel7(&right);
+
+  xneedint2(left,&right);
+
+  if(left->kind==PCONST && right.kind==PCONST)
+  {
+   left->val=left->val & right.val;
+  }
+  else
+  {
+   mxloadlr(left,&right);
+   xasmz(EAND);
+   left->kind=PEXP;
+  }
+ }
+
+
+
+/* dprintf(0,"level8 ex"); */
+
+}
+
+
+
+/* ^ XOR */
+
+static void xlevel9(xsp * left)
+{
+ xsp right;
+
+/* dprintf(0,"level 9"); */
+
+ xlevel8(left);
+
+ while(current=='^')
+ {
+  nexttoken();
+
+  if(left->kind==PEXP) xasmz(EPUSH0);
+
+  xlevel8(&right);
+
+  xneedint2(left,&right);
+
+  if(left->kind==PCONST && right.kind==PCONST)
+  {
+   left->val=left->val ^ right.val;
+  }
+  else
+  {
+   mxloadlr(left,&right);
+   xasmz(EXOR);
+   left->kind=PEXP;
+  }
+ }
+
+
+/* dprintf(0,"level9 ex"); */
+}
+
+
+/*  | arithmetic OR */
+
+
+static void xlevel10(xsp * left)
+{
+ xsp right;
+
+/* dprintf(0,"level 10"); */
+
+ xlevel9(left);
+
+ while(current=='|')
+ {
+  nexttoken();
+
+  if(left->kind==PEXP) xasmz(EPUSH0);
+
+  xlevel9(&right);
+
+  xneedint2(left,&right);
+
+  if(left->kind==PCONST && right.kind==PCONST)
+  {
+   left->val=left->val | right.val;
+  }
+  else
+  {
+   mxloadlr(left,&right);
+   xasmz(EORR);
+   left->kind=PEXP;
+  }
+ }
+
+
+/* dprintf(0,"level10 ex"); */
+}
+
+
+
+
+/*  && logicial and       */
+/*  go out on first false */
+
+static void xlevel11(xsp * left)
+{
+ int loopexit;
+ int loopjmp;
+
+/* dprintf(0,"level 11"); */
+
+ xlevel10(left);
+
+ if(current==TAA)
+ {
+  xasm(EJMP,9);
+  loopexit=xcodesize;
+  xasm(ELLCON0,0);
+  loopjmp=xcodesize;
+  xasm(EJMP,EBIGVAL);
+
+  while(1)
+  {
+   xneedint(left);
+
+   if(left->kind==PCONST)
+   {
+    if(left->val==0) xasm(EJMP,loopexit-xcodesize);
+   }
+   else
+   {
+    mxload0(left);
+    xasm(EBEQ,loopexit-xcodesize);
+   }
+
+   if(current!=TAA) break;
+   nexttoken();
+
+   xlevel10(left);
+  }
+
+  xasm(ELLCON0,1);
+  xasmat(EJMP,xcodesize-loopjmp,loopjmp);
+  left->kind=PEXP;
+ }
+
+
+/* dprintf(0,"level11 ex"); */
+}
+
+
+
+
+
+
+/*  || logicial or       */ 
+/*  go out on first true */
+
+static void xlevel12(xsp * left)
+{
+ int loopexit;
+ int loopjmp;
+
+/* dprintf(0,"level 12"); */
+
+ xlevel11(left);
+
+ if(current==TBB)
+ {
+  xasm(EJMP,9);
+  loopexit=xcodesize;
+  xasm(ELLCON0,1);
+  loopjmp=xcodesize;
+  xasm(EJMP,EBIGVAL);
+
+  while(1)
+  {
+   xneedint(left);
+
+   if(left->kind==PCONST)
+   {
+    if(left->val!=0) xasm(EJMP,loopexit-xcodesize);
+   }
+   else
+   {
+    mxload0(left);
+    xasm(EBNE,loopexit-xcodesize);
+   }
+
+   if(current!=TBB) break;
+   nexttoken();
+
+   xlevel11(left);
+  }
+
+  xasm(ELLCON0,0);
+  xasmat(EJMP,xcodesize-loopjmp,loopjmp);
+  left->kind=PEXP;
+ }
+
+/* dprintf(0,"level12 ex"); */
+}
+
+
+
+
+/*  ? switch */
+
+static void xlevel13(xsp * left)
+{
+ xsp right;
+ int branch1;
+ int branch2;
+ int savetype;
+
+/* dprintf(0,"level 13"); */
+
+ xlevel12(left);
+
+ if(current=='?')
+ {
+  xneedint(left);
+  mxload0(left);
+
+  branch1=xcodesize;
+  xasm(EBEQ,EBIGVAL);
+
+  nexttoken();   
+  xlevel13(&right);
+  mxload0(&right);
+  if(right.type==PSTR && right.kind!=PEXP) xasmz(SDUP0);
+
+  savetype=right.type;
+
+  branch2=xcodesize;
+  xasm(EJMP,EBIGVAL);
+  xasmat(EBEQ,xcodesize-branch1,branch1);
+
+  xneed(':');
+
+  xlevel13(&right);
+  mxload0(&right);
+  if(right.type==PSTR && right.kind!=PEXP) xasmz(SDUP0);
+
+  if(savetype!=right.type) xraise(ERRWRONGTYPE);
+
+  xasmat(EJMP,xcodesize-branch2,branch2);
+
+  left->type=savetype;
+  left->kind=PEXP;
+ }
+
+
+/* dprintf(0,"level13 ex"); */
+}
+
+
+
+/*  = += -= *= /= */
+
+static void xlevel14(xsp * left)
+{
+ xsp right;
+ int savetok;
+
+ left->kind=PUNKNOWN;
+ left->type=PVOID;
+
+/* dprintf(0,"level14 in"); */
+
+ xlevel13(left);
+
+
+ if(current=='=' || current==TTE || current==TQE || current==TAE ||
+       current==TPE || current==TME || current==TSE || current==TXE ||
+       current==TBE || current==TSLE || current==TSRE)
+ {
+  savetok=current;
+  nexttoken();
+  xlevel14(&right);
+
+  if(left->kind==PLEFT)
+  {
+   if((right.type!=left->type) ||
+     (right.type==PSTR && savetok!='=' && savetok!=TPE))xraise(ERRWRONGTYPE);
+
+   if(right.kind==PCONST) xasm(ELLCON0,right.val);
+   else
+   if(right.kind==PLEFT)  mxasm(ELDC0,ELDF0,&right);
+
+   left->kind=PEXP;
+
+   switch(savetok)
+   {
+    case '=':
+             if(right.type==PINT) mxasm(ESTC,ESTF,left);
+             else
+             if(right.type==PSTR)
+             {
+              mxasm(SSTC,SSTF,left);
+              if(right.kind==PLEFT || right.kind==PCONST) left->kind=PLEFT;
+             }
+             break;
+
+    case TTE:
+             mxasm(EMULSTC,EMULSTF,left);
+             break;
+
+    case TQE:
+             mxasm(EMODSTC,EMODSTF,left);
+             break;
+
+    case TAE:
+             mxasm(EANDSTC,EANDSTF,left);
+             break;
+
+    case TPE:
+             if(right.type==PINT) mxasm(EADDSTC,EADDSTF,left);
+             else
+             if(right.type==PSTR)
+             {
+              mxasm(SADDSTC,SADDSTF,left);
+              if(right.kind==PLEFT || right.kind==PCONST) left->kind=PLEFT;
+             }
+             break;
+
+    case TME:
+             mxasm(ESUBSTC,ESUBSTF,left);
+             break;
+
+    case TSE:
+             mxasm(EDIVSTC,EDIVSTF,left);
+             break;
+
+    case TXE:
+             mxasm(EXORSTC,EXORSTF,left);
+             break;
+
+    case TBE:
+             mxasm(EORRSTC,EORRSTF,left);
+             break;
+
+   case TSLE:
+             mxasm(ESSLSTC,ESSLSTF,left);
+             break;
+
+   case TSRE:
+             mxasm(ESSRSTC,ESSRSTF,left);
+             break;
+   }
+  }
+ }
+
+
+/* dprintf(0,"14ex"); */
+}
+
+
+
+/* , comma operator */
+
+static void xlevel15(xsp * left)
+{
+/* dprintf(0,"14 in"); */
+ xlevel14(left);
+/* dprintf(0,"14 out current=%d",current); */
+ while(current==',')
+ {
+  mxvoid0(left);
+  nexttoken();
+  xlevel14(left);
+ }
+}
+
+
+
+
+
+
+
+static int xstatement(void);
+
+
+
+
+
+static void xlocalvars(int stage)
+{
+ int      savetype;
+ int      savesym;
+ xsp      left;
+
+ while(1)
+ {
+  /* type */
+
+  if(current==TSTRING) savetype=PSTR;
+  else
+  if(current==TINT)    savetype=PINT;
+  else                 break;
+
+  /* id */
+
+  nexttoken();
+
+  while(1)                                /* go down int a=2,b,c,d; list */
+  {
+   if(current==TID)   /* add it to symbol table - nb add, overwrite old ones */
+   {
+    if(xfinds(tokstart,stage)!=XSNOTFOUND) xraise(ERRMULTIPLE);
+    savesym=xadd(&tokstart,fnoffset,savetype,PSTACK);
+    fnoffset++;
+    nexttoken();
+   }
+   else xneed(TID);               /* -> goes out */
+
+   if(current=='=')
+   {
+    nexttoken();
+    xlevel14(&left);
+    if(left.kind==PUNKNOWN) xraise(ERRNEEDEXP);
+    mxload0(&left);
+    if(left.type!=savetype) xraise(ERRWRONGTYPE);
+    else
+    if(left.type==PSTR)
+    {
+     if(left.kind!=PEXP)
+     {
+      xasmz(SDUP0);
+     }
+     scount++;
+    }
+   }
+   else
+   {
+    if(savetype==PSTR)
+    {
+     xasmz(SCREATE);
+     scount++;
+    }
+   }
+
+   xasmz(EPUSH0);
+
+   if(current==';')
+   {
+    nexttoken();
+    break;
+   }
+   else 
+   xneed(',');
+  }
+ }
+}
+
+
+
+static void xcompound(void)
+{
+ int offset=fnoffset;
+ int count=scount;
+ int stage;
+
+ xneed('{');
+
+ /* local var block */
+
+ stage=xaddstage();
+
+ xlocalvars(stage);
+
+ while(xstatement());
+
+ xremstage(stage);
+
+ xneed('}');
+
+ if(fnoffset!=offset) xasm(ESPSP,offset-fnoffset); 
+
+ fnoffset=offset;
+
+ if(scount!=count) xasm(SPULL,scount-count);
+
+ scount=count;
+}
+
+
+
+
+
+static void xfor(void)
+{
+ xsp left;
+ int condstart;
+ int condend;
+ int loopback;
+ int loopexit;
+ brkblk block=brkblock;
+
+ xneed(TFOR);
+
+ xneed('(');
+ xlevel15(&left);                        /* initialisation */
+ mxvoid0(&left);
+ xneed(';');
+
+ condstart=xcodesize;
+ xlevel15(&left);                        /* condition */
+ xneedint(&left);
+ mxload0(&left);
+ condend=xcodesize;
+ xasm(EBNE,EBIGVAL);
+
+ loopexit=xcodesize;
+ xasm(EJMP,EBIGVAL);                     /* at this point branch out if true */
+
+
+ loopback=xcodesize;
+ xneed(';');
+ xlevel15(&left);
+ mxvoid0(&left);
+ xneed(')');
+ xasm(EJMP,condstart-xcodesize);        /* branch from here to condition */
+
+
+ xasmat(EBNE,xcodesize-condend,condend);
+
+
+ brkblock.inuse=1;
+ brkblock.loopexit=loopexit;
+ brkblock.loopstart=loopback;
+ brkblock.offset=fnoffset;
+ brkblock.count=scount;
+
+ if(!xstatement()) xraise(ERRSTATEMENT);
+
+ xasm(EJMP,loopback-xcodesize);
+
+ xasmat(EJMP,xcodesize-loopexit,loopexit);
+
+ brkblock=block;
+}
+
+
+
+
+static void xdo(void)
+{
+ xsp left;
+ int loopstart;
+ int loopexit;
+ brkblk block=brkblock;
+
+ xasm(EJMP,7);
+ loopexit=xcodesize;
+ xasm(EJMP,EBIGVAL);
+ loopstart=xcodesize;
+
+ brkblock.inuse=1;
+ brkblock.loopexit=loopexit;
+ brkblock.loopstart=loopstart;
+ brkblock.offset=fnoffset;
+ brkblock.count=scount;
+
+ xneed(TDO);                                /* do        */
+ if(!xstatement()) xraise(ERRSTATEMENT);    /* statement */
+ xneed(TWHILE);                             /* while */
+ xneed('(');                                /* (expression) */
+ xlevel15(&left);
+ xneed(')');
+ xneedint(&left);
+
+ mxload0(&left);
+
+ xasm(EBNE,loopstart-xcodesize);
+ xasmat(EJMP,loopexit-xcodesize,loopexit);
+
+ brkblock=block;
+}
+
+
+static void xwhile(void)
+{
+ xsp    left;
+ int    loopexit;
+ int    loopstart;
+ brkblk block=brkblock;
+
+ loopstart=xcodesize;
+ xneed(TWHILE);
+ xneed('(');
+ xlevel15(&left);
+ xneed(')');
+ xneedint(&left);
+
+ mxload0(&left);
+
+ xasm(EBNE,7);
+ loopexit=xcodesize;
+ xasm(EJMP,EBIGVAL);
+
+ brkblock.inuse=1;
+ brkblock.loopexit=loopexit;
+ brkblock.loopstart=loopstart;
+ brkblock.offset=fnoffset;
+ brkblock.count=scount;
+
+ if(!xstatement()) xraise(ERRSTATEMENT);
+ xasm(EJMP,loopstart-xcodesize);
+ xasmat(EJMP,xcodesize-loopexit,loopexit);
+
+ brkblock=block;
+}
+
+
+
+static void xbreak(void)
+{
+ xneed(TBREAK);
+ xneed(';');
+ if(!brkblock.inuse) xraise(ERRNOBRK);
+ if(fnoffset!=brkblock.offset) xasm(ESPSP,brkblock.offset-fnoffset);
+ if(scount!=brkblock.count) xasm(SPULL,scount-brkblock.count);
+ xasm(EJMP,brkblock.loopexit-xcodesize);  /* has to be backward */
+}
+
+
+static void xcontinue(void)
+{
+ xneed(TCONTINUE);
+ xneed(';');
+ if(!brkblock.inuse || brkblock.inuse==2) xraise(ERRNOCONT);
+ if(fnoffset!=brkblock.offset) xasm(ESPSP,brkblock.offset-fnoffset);
+ if(scount!=brkblock.count) xasm(SPULL,scount-brkblock.count);
+ xasm(EJMP,brkblock.loopstart-xcodesize);  /* has to be backward */
+}
+
+
+
+static void xif(void)
+{
+ xsp left;
+ int afterif;
+ int beforeif;
+
+ xneed(TIF);
+
+ xneed('(');
+
+/* dprintf(0,"15 in"); */
+ xlevel15(&left);
+/* dprintf(0,"15 out"); */
+ xneed(')');
+
+ xneedint(&left);
+ mxload0(&left);
+
+ beforeif=xcodesize;
+ xasm(EBEQ,EBIGVAL);
+
+ if(!xstatement()) xraise(ERRSTATEMENT);
+
+ if(current==TELSE)
+ {
+  afterif=xcodesize;
+  xasm(EJMP,EBIGVAL);
+  xasmat(EBEQ,xcodesize-beforeif,beforeif);
+
+  nexttoken();
+  if(!xstatement()) xraise(ERRSTATEMENT);
+
+  xasmat(EJMP,xcodesize-afterif,afterif);
+ }
+ else
+ {
+  xasmat(EBEQ,xcodesize-beforeif,beforeif);
+ }
+
+}
+
+
+
+
+static void xreturn(void)
+{
+ xsp left;
+
+ xneed(TRETURN);
+ xlevel15(&left);
+ mxload0(&left);
+
+ if(left.type!=fntype) xraise(ERRWRONGRET);
+
+ xneed(';');
+
+ if(fnloffset!=fnoffset) xasm(ESPSP,fnloffset-fnoffset); 
+
+ if(left.type==PSTR)
+ {
+  if(left.kind!=PEXP) xasmz(SDUP0);
+  if(slcount!=scount) xasm(SPULLX,scount-slcount);
+ }
+ else
+ if(slcount!=scount)  xasm(SPULL,scount-slcount);
+
+ xasmz(ERTS);
+}
+
+
+
+
+static void xcase(void)
+{
+ xsp left;
+
+ xneed(TCASE);
+
+ if(brkblock.inuse!=2) xraise(ERRNOTSWITCH);
+
+ xlevel15(&left);
+
+ if(left.kind!=PCONST) xraise(ERRNEEDCONST);
+
+ brkblock.selector[brkblock.cases].val=left.val;
+ brkblock.selector[brkblock.cases++].offset=xcodesize;
+
+ xneed(':');
+}
+
+
+static void xdefault(void)
+{
+ if(brkblock.inuse!=2) xraise(ERRNOTSWITCH);
+
+ xneed(TDEFAULT);
+ xneed(':');
+
+ if(brkblock.loopstart!=0) xraise(ERRONEDEFLT);
+
+ brkblock.loopstart=xcodesize;
+}
+
+
+
+static int selcmp(const void * p,const void * q)
+{
+ int val1;
+ int val2;
+
+ val1=((selblk*)p)->val;
+ val2=((selblk*)q)->val;
+
+ if(val1>val2) return(1);
+ else
+ if(val1<val2) return(-1);
+ else          return(0);
+}
+
+
+
+static void xswitch(void)
+{
+ xsp    left;
+ brkblk block=brkblock;
+ selblk selector[MAXSWITCH];
+ int    loopexit;
+ int    i;
+ int    swcode;
+
+ xneed(TSWITCH);
+
+ xneed('(');
+ xlevel15(&left);
+ xneed(')');
+
+ xneedint(&left);
+ mxload0(&left);
+
+ xasm(EJMP,7);
+ loopexit=xcodesize;
+ xasm(EJMP,EBIGVAL);
+
+ swcode=xcodesize;
+ xasm(ESWITCH,EBIGVAL);
+
+ brkblock.inuse=2;
+ brkblock.loopexit=loopexit;
+ brkblock.loopstart=0;
+ brkblock.selector=selector;
+ brkblock.cases=0;
+ brkblock.offset=fnoffset;
+ brkblock.count=scount;
+
+ xcompound();
+
+ xasm(EJMP,loopexit-xcodesize);
+
+ /* now construct the data block for switch */
+
+ xasmalign();
+
+ xasmat(ESWITCH,xcodesize-swcode,swcode);
+
+ if(brkblock.loopstart) xasmwriteword(brkblock.loopstart-swcode);
+ else                   xasmwriteword(brkblock.loopexit-swcode);
+
+
+ qsort(selector,brkblock.cases,sizeof(selblk),selcmp);
+
+ xasmwriteword(brkblock.cases);
+ for(i=0;i<brkblock.cases;i++) 
+ {
+  xasmwriteword(selector[i].val);
+  xasmwriteword(selector[i].offset-swcode);
+ }
+
+ xasmat(EJMP,xcodesize-loopexit,loopexit);
+
+ brkblock=block;
+}
+
+
+
+
+
+
+
+
+
+
+/* statements return 1 if it was a statement or 0 if it was not */
+
+static int xstatement(void)
+{
+ xsp left;
+                                       
+ if(current==';')     nexttoken();     /* null statement */
+ else
+ if(current==TBREAK)   xbreak();
+ else
+ if(current==TCONTINUE) xcontinue();
+ else
+ if(current==TFOR)     xfor();
+ else
+ if(current==TDO)      xdo();
+ else
+ if(current==TWHILE)   xwhile();
+ else
+ if(current==TIF)      xif();
+ else
+ if(current==TRETURN)  xreturn();
+ else
+ if(current=='{')      xcompound();
+ else
+ if(current==TSWITCH)  xswitch();
+ else
+ if(current==TCASE)    xcase();
+ else
+ if(current==TDEFAULT) xdefault();
+ else                                  /* try for expression */
+ {
+  xlevel15(&left);
+  if(left.kind==PUNKNOWN) return(0);
+  mxvoid0(&left);
+  xneed(';');
+ }
+
+ return(1);
+}
+
+
+
+
+static void xfndecl(int sym)
+{
+ int      argc;
+ int      savetype;
+ int      stage;
+ int      savesym;
+ int      cref;
+
+ fnoffset=0;
+ scount=0;
+
+ argc=0;
+ xneed('(');
+
+ stage=xaddstage();
+
+ if(current!=')')
+ while(1)
+ {
+  if(current==TVOID) 
+  {
+   nexttoken();
+   break;
+  }
+  else
+  if(current==TSTRING) savetype=PSTR;  
+  else
+  if(current==TINT)    savetype=PINT;
+  else                 xraise(ERRNEEDTYPE);
+
+  /* got type, now get id */
+
+  nexttoken();        /* should be id */
+
+  if(current=='&')
+  {
+   if(savetype==PSTR)
+   {
+    nexttoken();
+    cref=1;
+   }
+   else               xneed(TID);
+  }
+  else cref=0;
+
+  if(current==TID)   /* add it to symbol table - nb add, overwrite old ones */
+  {
+   if(xfinds(tokstart,stage)!=XSNOTFOUND) xraise(ERRMULTIPLE);
+   savesym=xadd(&tokstart,fnoffset,savetype,cref?PREF:PSTACK);
+   setsymfntype(argc,sym,savetype,cref?PREF:PSTACK);
+   nexttoken();
+  }
+  else xneed(TID);               /* -> goes out */
+
+  argc++;
+  if(argc>=MAXARG) xraise(ERRMAXARG);
+  fnoffset+=1;
+
+
+  if(current==',') nexttoken();
+  else
+  if(current==')') break;
+ }
+
+ xneed(')');
+
+ xptr(sym)->argc=argc;
+
+ /* now function body */
+
+ xneed('{');
+
+ /* local vars go here */
+
+ fnloffset=fnoffset;
+ slcount=scount;
+
+ xlocalvars(stage);
+
+ while(xstatement());
+
+ xneed('}');
+
+ xremstage(stage);
+
+ if(fnloffset!=fnoffset) xasm(ESPSP,fnloffset-fnoffset); 
+ if(slcount!=scount)     xasm(SPULL,scount-slcount);
+ if(fntype==PSTR)        xasmz(SCREATE);  /* in case return nothing */
+
+ xasmz(ERTS);
+}
+
+
+
+
+
+/* at this level can be function or var defn. */
+
+static void xdefn(void)
+{
+ int savetype;
+ int savesym;
+ xsp left;
+ symstr * sx;
+ int pendmultiple;
+
+ pendmultiple=0;
+
+ /* type */
+
+ if(current==TSTRING) savetype=PSTR;
+ else
+ if(current==TVOID)   savetype=PVOID;
+ else
+ if(current==TINT)    savetype=PINT;
+ else                 xraise(ERRNEEDTYPE);
+
+ /* id */
+
+ nexttoken();
+ if(current==TID)   /* add it to symbol table - nb add, overwrite old ones */
+ {
+  if(xfind(tokstart)!=XSNOTFOUND)
+  {
+   if(!strcmp(tokstart,"main"))
+   {
+    if(xfinds(tokstart,xnsyms)!=XSNOTFOUND) xraise(ERRMULTIPLE);
+    else                                    pendmultiple=1;
+   }
+   else xraise(ERRMULTIPLE);
+  }
+  savesym=xadd(&tokstart,0,savetype,PGLOBAL);
+  nexttoken();
+ }
+ else xneed(TID);               /* -> goes out */
+
+
+                                /* ( it's a function or else it's a var list */
+ if(current=='(')
+ {
+  pendmultiple=0;
+  sx=xptr(savesym);
+  sx->mode=PFN;
+  sx->val=xcodesize;
+  fntype=savetype;
+  xfndecl(savesym);             /* a function declaration */
+ }
+ else                           /* a var list */
+ {                              /* <=expression> <,> loop or ; */
+
+  if(pendmultiple) xraise(ERRMULTIPLE);
+
+  while(1)
+  {
+   if(current=='=')
+   {
+    nexttoken();
+    xlevel14(&left);
+    if(left.kind!=PCONST)    xraise(ERRNEEDCONST);
+    if(savetype!=left.type)  xraise(ERRWRONGTYPE);
+    xptr(savesym)->val=left.val;
+   }
+   else
+   {
+    if(savetype==PSTR) xptr(savesym)->val=createstring("");
+   }
+
+
+   if(current==';')
+   {
+    nexttoken();
+    break;
+   }
+   else 
+   xneed(',');
+
+   if(current==TID)   /* add it to symbol table - nb add, overwrite old ones */
+   {
+    if(xfind(tokstart)!=XSNOTFOUND) xraise(ERRMULTIPLE);
+    savesym=xadd(&tokstart,0,savetype,PGLOBAL);
+    nexttoken();
+   }
+   else xneed(TID);
+  }
+ }
+}
+
+
+
+os_error * xparse(void)
+{
+ brkblock.inuse=0;
+
+ nexttoken();
+ while(current!=TEOF)
+ {
+  xdefn();
+ }
+
+ return(NULL);
+}
+
+

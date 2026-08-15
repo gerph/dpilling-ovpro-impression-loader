@@ -1,0 +1,56 @@
+/*->h.con */
+
+typedef os_error * (*confn)(void * address,int read); 
+
+typedef struct contokstr
+{
+ char * name;
+ int    value;
+
+} contokstr;
+
+
+
+typedef struct conarraystr
+{
+ int  * y;      /* pointer to height variable */ 
+ char * types;  /* IS */
+
+} conarraystr;
+
+
+#define CONINT   0x1
+#define CONSTR   0x2
+#define CONTOK   0x3
+#define CONARRAY 0x4
+
+
+typedef struct contag
+{
+ char * name;
+ int    type;
+ void * address;
+ union
+ {
+  contokstr   * list;
+  int           len;
+  conarraystr * array;
+ } data;
+ confn  con;
+} contag;
+
+
+
+typedef struct conlink
+{
+ char            * name;
+ struct conlink  * next;
+ contag          * tags;
+} conlink;
+
+
+extern os_error * addcontable(contag * tags,conlink * link);
+extern os_error * initcon(void);
+extern os_error * saveconfig(char * name);
+extern os_error * loadconfig(char * name);
+

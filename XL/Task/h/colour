@@ -1,0 +1,56 @@
+/*->h.colour */
+
+
+#define WIMPLBLUE 15
+#define WIMPORANGE 14
+#define WIMPRED   11
+#define WIMPGREEN 10
+#define WIMPYELLOW 9
+#define WIMPDBLUE 8
+#define WIMPBLACK 7
+#define WIMPGREY1 1
+#define WIMPGREY2 2
+#define WIMPGREY3 3
+#define WIMPGREY4 4
+#define WIMPGREY5 5
+#define WIMPGREY6 6
+#define WIMPWHITE 0
+
+
+extern os_error * setgcolactionreturn(int pal,int action,int * value);
+extern os_error * setgcolaction(int pal,int action);
+extern os_error * setgcol(int pal);
+extern os_error * setgcolour(int wcol,int eor);
+extern os_error * seteorcol(int back,int front);
+extern os_error * seteorcolpal(int back,int front);
+
+extern int getcolnumber(int pal);
+extern int getgcolnumber(int pal);
+extern int setoppgcol(int pal);
+
+
+extern os_error *selecttable(int sourcemode, int *sourcepal, int destmode,
+                      int *destpal,char *transtab);
+
+extern os_error * selectsptable(sprite_header * sprite,char pixtrans[],
+                                                                  int size);
+
+
+extern os_error * getdeltas(int mode,int * dx,int * dy);
+extern os_error * getbpp(int mode,int * rln2bpp,int * bitmask);
+
+
+extern os_error * Xgetdeltas(int mode,int * dx,int * dy);
+extern os_error * Xgetbpp(int mode,int * bpp,int * bitmask);
+extern os_error * Xgetspriteinfo(newsprite_header * sph,int * xdpi,int * ydpi,int * bpp);
+extern os_error * Xgetspritesize(newsprite_header * sph,int * xpix,int * ypix,int * bpp);
+
+#define SPRITE_ORIGINAL 0
+#define SPRITE_RISCOS35 1
+#define SPRITE_RISCOS5  2
+
+extern int spriteheader_class(newsprite_header * sph);
+extern int spritemode_class(int mode);
+
+extern int spriteheader_rgborder(newsprite_header * sph);
+extern int spritemode_rgborder(int mode);

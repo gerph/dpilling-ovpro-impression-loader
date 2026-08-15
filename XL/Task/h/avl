@@ -1,0 +1,24 @@
+/*->h.avl */
+
+
+
+#define NIL_NODE -1
+
+
+
+typedef struct avlstr
+{
+ int          parent;
+ int          sibls[2];
+ int          balance;
+ int          key;
+} avlstr;
+
+
+typedef int (*avlcmpfn)(void *, void *);
+
+extern int avlsearch(int newnode,int * rootp,char * base,avlcmpfn avlcmp);
+extern int avlfind(void * key,int rootp,char * base,avlcmpfn avlcmp);
+extern int avlwalk(int node,char * base,int * state);
+extern int avldelete(int node,int * rootp,char * base,avlcmpfn avlcmp);
+

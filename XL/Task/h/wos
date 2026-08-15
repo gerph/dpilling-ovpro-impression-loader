@@ -1,0 +1,178 @@
+/*->h.wos */
+
+
+typedef struct mousestr
+{
+ int x;
+ int y;
+ int buttons;
+ int handle;
+ int icon;
+} mousestr;
+
+
+typedef struct windowstr
+{
+ int x0;
+ int y0;
+ int x1;
+ int y1;
+ int scx;
+ int scy;
+ int bhandle;
+ int wflags;
+ int bx;
+ int by;
+} windowstr;
+
+
+typedef struct iconstr
+{
+ int ix0;
+ int ix1;
+ int iy0;
+ int iy1;
+} iconstr;
+
+
+
+#define BADPOINTER     -2
+#define NOPOINTER      -1
+#define SYSTEMPOINTER   0
+#define USERPOINTER     1
+
+
+typedef struct pointstr 
+{
+ char * name;
+ int    x;
+ int    y;
+} pointstr;
+
+
+
+
+typedef struct vdustr
+{
+ int deltax;
+ int deltay;
+ int maskx;
+ int masky;
+ int screenx;
+ int screeny;
+ int lndeltax;
+ int lndeltay;
+ int ncolours;
+ int gcharsizex;
+ int gcharsizey;
+ int gcharspacex;
+ int gcharspacey;
+ int ln2bpp;
+ int mode;
+
+ wimp_palettestr vdupal;
+ int             wimpcolnos[16];
+
+ int modeflags;
+ int rgbmode;
+ int spare[8];
+
+} vdustr;
+
+
+extern vdustr cvdu;
+
+
+
+extern int hscrlbar;
+extern int vscrlbar;
+
+
+
+extern vdustr   * getcvdu(void);
+extern void       getcurdeltas(int * dx,int * dy);
+extern void       vdumodevars(void);
+extern void       vdupalvars(void);
+extern void       vdupalvars2(vdustr * vdu);
+extern void       vdumodevars2(vdustr * vdu);
+
+
+extern os_error * select(int handle,int icon);
+extern os_error * deselect(int handle,int icon);
+extern os_error * selectst(int handle,int icon,int state);
+extern os_error * shadeicon(int window,int icon);
+extern os_error * unshadeicon(int window,int icon);
+extern os_error * shadeicon2(int window,int icon);
+extern os_error * unshadeicon2(int window,int icon);
+extern os_error * makemenuicon(int window,int icon);
+extern os_error * unmakemenuicon(int window,int icon);
+extern os_error * makemenust(int window,int icon,int state);
+extern os_error * shadeiconst(int window,int icon,int state);
+extern os_error * writeableicon(int window,int icon);
+extern os_error * unwriteableicon(int window,int icon);
+extern os_error * writeableiconst(int window,int icon,int state);
+extern os_error * getpointer(mousestr * mouse);
+extern os_error * getospointer(mousestr * mouse);
+extern os_error * changepointer(int type,pointstr * pointdata,char * sprites);
+extern void       getws(windowstr * window,wimp_openstr * o);
+extern os_error * getw(int handle,windowstr * window);
+extern os_error * geti(int handle,int icon,iconstr * icons);
+extern os_error * open(int handle,int x0,int y0,int x1,int y1,int scx,int scy,
+                                                               int behind);
+extern int        wonscreen(wimp_openstr * r);
+extern os_error * wcheckopen(wimp_openstr * o,int offok);
+
+extern os_error * extent(int handle,int x0,int y0,int x1,int y1);
+extern os_error * iconaddr(int handle,int icon,char ** p);
+extern os_error * caret(int handle,int icon,int x,int y,int height,int index);
+extern os_error * iecarrot(int wh,int ih);
+extern os_error * incarrot(int wh,int ih);
+extern os_error * setfocus(int handle);
+extern os_error * findcaret(int * chandle,int * cicon);
+extern os_error * refreshicon(int window,wimp_icon * isblock);
+extern os_error * iconlength(int window,int icon,int * len);
+extern os_error * writeicon(int window,int icon,char * string);
+extern os_error * writeiconc(int window,int icon,char * string);
+extern os_error * writeiconf(int window,int icon,char * format,...);
+extern os_error * writeiconfc(int window,int icon,char * format,...);
+extern os_error * geticonint(int handle,int icon,int * val);
+extern os_error * setspritesicon(int window,int icon);
+extern os_error * setspa(int window,int icon,int len,char * name);
+extern os_error * setindirect(int window,int icon,int len,char * string);
+extern os_error * writevalid(int window,int icon,char * string);
+extern os_error * radioon(int window,int icon);
+extern os_error * radiooff(int window,int icon);
+extern os_error * radiost(int window,int icon,int state);
+extern os_error * opton(int window,int icon);
+extern os_error * optoff(int window,int icon);
+extern os_error * optst(int window,int icon,int state);
+extern os_error * geto(int handle,windowstr * window);
+extern os_error * setmouse(int x,int y);
+extern os_error * refreshwindowtitle(int handle);
+extern os_error * refreshwindow(int handle);
+extern os_error * centerwindow(wimp_wstate * wst,int handle,int i);
+extern void       centerwindow2(wimp_wstate * wst,int i);
+extern os_error * popup(int handle,int i);
+extern os_error * reopenw(int handle);
+extern os_error * openatscroll(int handle,int scx,int scy);
+extern os_error * closedown(int * handle);
+extern void       setclosedefeat(int state);
+extern os_error * closedowncheck(int handle);
+extern os_error * menuwindow(int handle);
+
+extern int taskhandle;
+extern int iconbaricon;
+
+extern os_error * starttask(void);
+extern os_error * seticonbar(char * name);
+extern os_error * setnewiconbar(char * name);
+
+extern os_error * findwindowtask(int handle,int icon,int * task);
+
+
+
+extern os_error * cmosread(int index,int * value);
+
+
+
+

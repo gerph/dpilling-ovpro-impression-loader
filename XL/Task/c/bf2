@@ -1,0 +1,73 @@
+/*->c.bf2 */
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdarg.h>
+
+#include "os.h"
+#include "bbc.h"
+#include "h.sprite"
+#include "h.wimp"
+#include "h.wimpt"
+#include "h.werr"
+#include "h.flex"
+
+
+#include "h.wos"
+#include "h.fsx"
+#include "h.ram"
+#include "h.err"
+#include "h.bf"
+#include "h.timex"
+
+
+
+
+os_error * bf_copyn(buffer * bf,int fh,int len,int * write)
+{
+ os_error * err;
+ int        left;
+ int        chunk;
+
+
+ err=NULL;
+ left=len;
+
+ while(!err && left)
+ {
+  if(!(bf->flags & BUFFCRIT))
+  {
+   /* see how much we can write to the buffer */
+
+   chunk=bf->size-(bf->p-bf->base);
+   if(chunk>0)
+   {
+    if(chunk>left) chunk=left;
+
+    fs_read(fh,bf->data+(bf->p-bf->base),chunk);
+    bf->flags|=BUFFMOD;
+
+    bf->p+=chunk;
+    if(bf->p>=(bf->base+bf->size))  bf->flags|=BUFFCRIT;
+    if(bf->p>(bf->base+bf->length)) bf->length=bf->p-bf->base;
+
+    left-=chunk;
+   }
+  }
+
+  if(bf->flags & BUFFCRIT)
+  {
+   err=bf_dump(bf);
+   bf->length=0;
+   bf->base=bf->p;
+   bf->flags&=~BUFFCRIT;
+  }
+ }
+
+ if(write) *write=len-left;
+
+ return(err);
+}
+

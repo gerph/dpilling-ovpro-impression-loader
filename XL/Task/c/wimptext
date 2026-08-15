@@ -1,0 +1,347 @@
+/*->c.wimptext */
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+#include <stdarg.h>
+
+
+#include "h.swis"
+#include "h.kernel"
+#include "h.bbc"
+#include "h.os"
+#include "h.wimp"
+#include "h.wimpt"
+#include "h.font"
+
+#include "h.wos"
+#include "h.task"
+#include "h.colour"
+#include "h.sp"
+
+
+#include "h.wimptext"
+
+
+
+
+#define FONTCODE 26
+
+
+
+int wimpavfontwidth=16;
+
+
+static int wimpfonthandle;
+static int wimpfontlead;
+static int wimpfontheight;
+static int wimpfontwidth;
+
+
+
+void wimpfontstart(int avwidth)
+{
+ os_regset rx;
+ char    * p;
+ char      fontname[256];
+ int       xsize=192;
+ int       ysize=192;
+ int       temp;
+ font_info fi;
+ int       i;
+ int       j;
+
+ wimpfonthandle=0;
+
+ wimpfontheight=32;
+ wimpfontwidth=wimpavfontwidth=16;
+ wimpfontlead=0;
+ j=0;                /* compiler */
+
+
+ if(avwidth)
+ {
+  j=2;
+
+  for(i=32;i<127;i++)
+  {
+   fontname[j]=i;
+   j++;
+  }
+
+  for(i=160;i<256;i++)
+  {
+   fontname[j]=i;
+   j++;
+  }
+
+  fontname[j]=0;
+ }
+
+ if(wimpversion>=350) 
+ {
+  if(avwidth)
+  {
+   rx.r[0]=1+(1<<30);
+   rx.r[1]=(int)(fontname+2);
+   rx.r[2]=j;
+
+
+   if(!os_swix(Wimp_TextOp,&rx))
+   {
+    wimpavfontwidth=rx.r[0]/j;
+   }
+  }
+ }
+ else
+ {
+  if((p=getenv("Wimp$Font"))!=NULL)
+  {
+   strcpy(fontname,p);
+ 
+   if((p=getenv("Wimp$FontSize"))!=NULL) 
+   {
+    if(sscanf(p,"%d",&temp)==1) ysize=temp;
+   }
+
+   if((p=getenv("Wimp$FontWidth"))!=NULL)
+   {
+    if(sscanf(p,"%d",&temp)==1) xsize=temp;
+   }
+
+   font_find(fontname,xsize,ysize,0,0,&wimpfonthandle);
+  }
+
+  if(wimpfonthandle)
+  {
+   rx.r[0]=wimpfonthandle;
+   os_swix(Font_ReadInfo,&rx);
+   wimpfontlead=rx.r[4];
+   wimpfontheight=rx.r[4]-rx.r[2];
+   wimpfontwidth=rx.r[3]-rx.r[1];
+
+   if(avwidth)
+   {
+    fontname[0]=FONTCODE;
+    fontname[1]=wimpfonthandle;
+
+    font_stringbbox(fontname,&fi);
+
+    wimpavfontwidth=(fi.maxx-fi.minx)/((j-2)*400);
+   }
+  }
+ }
+}
+
+
+int wimpfontstringwidth(char * string)
+{
+ os_regset rx;
+
+ rx.r[0]=1;
+ rx.r[1]=(int)string;
+ rx.r[2]=0;
+
+ if(wimpversion<350 || os_swix(Wimp_TextOp,&rx)) return(16*strlen(string));
+ else                                            return(rx.r[0]);
+}
+
+
+void wimpfontend(void)
+{
+ if(wimpfonthandle)
+ {
+  font_lose(wimpfonthandle);
+  wimpfonthandle=0;
+ }
+}
+
+
+
+
+
+void stringat(int x,int y,char * string,int col,int height)
+{
+ os_regset rx;
+ int       shift;
+
+
+ if(wimpfonthandle)
+ {
+  shift=(height-cvdu.deltay-wimpfontheight)/2+wimpfontlead;
+
+  rx.r[0]=wimpfonthandle; 
+  rx.r[1]=cvdu.vdupal.c[(col>>8) & 0xFF].word;
+  rx.r[2]=cvdu.vdupal.c[col & 0xFF].word;
+  rx.r[3]=14;
+
+  os_swix(ColourTrans_SetFontColours,&rx);
+
+  font_paint(string,font_ABS|font_OSCOORDS,x,y-shift);
+ }
+ else
+ {
+  y-=(height+cvdu.deltay-32)/2;
+ 
+  wimp_setcolour(col & 0xFF);
+  wimp_setcolour(((col>>8) & 0xFF)|128);
+
+  rx.r[0]=2+(1<<30);
+  rx.r[1]=(int)string;
+  rx.r[2]=-1;
+  rx.r[3]=-1;
+  rx.r[4]=x;
+  rx.r[5]=y-32+12; /*2*deltay; */
+
+  if(wimpversion<350 || os_swix(Wimp_TextOp,&rx))
+  {
+   bbc_move(x,y);
+   bbc_stringprint(string);
+  }
+ }
+}
+
+
+
+
+
+
+
+void plinthtext(int x,int y,int w,int h,char * string,int col)
+{
+ int i;
+
+ wimp_setcolour((col>>8) & 0xFF);
+ bbc_rectanglefill(x,y,w,-h);
+
+ wimp_setcolour(4);
+
+ for(i=0;i<4;i+=cvdu.deltay)
+ {
+  bbc_move(x,y+i);
+  bbc_draw(x+w,y+i);
+ }
+
+ for(i=0;i<4;i+=cvdu.deltax)
+ {
+  bbc_move(x+i,y);
+  bbc_draw(x+i,y-h);
+ }
+
+ wimp_setcolour(0);
+
+ for(i=0;i<4;i+=cvdu.deltay)
+ {
+  bbc_move(x,y-h+i);
+  bbc_draw(x+w,y-h+i);
+ }
+
+ for(i=0;i<4;i+=cvdu.deltax)
+ {
+  bbc_move(x+w-i,y);
+  bbc_draw(x+w-i,y-h);
+ }
+
+ stringat(x+6,y,string,col,h);
+}
+
+
+void noplinthtext(int x,int y,int w,int h,char * string,int col)
+{
+ wimp_setcolour((col>>8) & 0xFF);
+ bbc_rectanglefill(x,y,w,-h);
+ wimp_setcolour(7);
+ bbc_rectangle(x,y,w,-h);
+ stringat(x+8,y,string,col,h);
+}
+
+
+
+static int * otickptr;
+static int   otickwidth;
+static int   otickheight;
+
+
+os_error * tickat(int x,int y,int col)
+{
+ os_regset     rx;
+ sprite_id     id;
+ sprite_info   resultinfo;
+ int           pixtrn[4];
+ int           magblk[4];
+ int           dx;
+ int           dy;
+ int           fore;
+ int           back;
+ int           i;
+ int         * pal;
+ int           r;
+ int           g;
+ int           b;
+ int           dr;
+ int           dg;
+ int           db;
+
+
+ if(!otickptr)
+ {
+  otickptr=spfind((sprite_area*)sprites,"otick");
+
+  id.tag=sprite_id_addr;
+  id.s.addr=otickptr;
+
+  sprite_readsize((sprite_area*)sprites,&id,&resultinfo);
+  getdeltas(resultinfo.mode,&dx,&dy);
+
+  otickwidth=resultinfo.width*dx;
+  otickheight=resultinfo.height*dy;
+ }
+
+ if(otickptr)
+ {
+  pal=(int*)(((char*)otickptr)+sizeof(sprite_header));
+
+  fore=cvdu.vdupal.c[(col>>8) & 0xFF].word;
+  back=cvdu.vdupal.c[col & 0xFF].word;
+
+  dr=((back>>8)&0xFF)-((fore>>8)&0xFF);
+  dg=((back>>16)&0xFF)-((fore>>16)&0xFF);
+  db=((back>>24)&0xFF)-((fore>>24)&0xFF);
+  r=((fore>>8)&0xFF)*8;
+  g=((fore>>16)&0xFF)*8;
+  b=((fore>>24)&0xFF)*8;
+
+  for(i=0;i<8;i++)
+  {
+   *pal=*(pal+1)=((b/8)<<24)|((g/8)<<16)|((r/8)<<8);
+   pal+=2;
+   r+=dr;
+   g+=dg;
+   b+=db;
+  }
+
+
+  rx.r[0]=0x200;                 /* wimp_readpixtrans */
+  rx.r[1]=(int)sprites;          /* wimp.colours      */
+  rx.r[2]=(int)otickptr;
+  rx.r[6]=(int)magblk;
+  rx.r[7]=(int)pixtrn; 
+  os_swix(Wimp_ReadPixTrans,&rx);
+
+  rx.r[0]=0x200+52;
+  rx.r[1]=(int)sprites;
+  rx.r[2]=(int)otickptr;
+  rx.r[3]=x; 
+  rx.r[4]=y-otickheight;
+  rx.r[5]=8;
+  rx.r[6]=(int)magblk;
+  rx.r[7]=(int)pixtrn;
+
+  os_swix(OS_SpriteOp,&rx);
+ }
+
+ return(NULL);
+}
+

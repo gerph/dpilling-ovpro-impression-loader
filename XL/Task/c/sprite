@@ -1,0 +1,311 @@
+/*->c.sprite */
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <signal.h>
+#include <ctype.h>
+#include <time.h>
+#include <stdarg.h>
+
+#include "h.os"
+#include "h.sprite"
+
+#include "h.colour"
+#include "h.bits"
+
+
+#define OS_SpriteOp 0x2E
+
+static os_error * sprite__op(os_regset *r)
+{
+  return os_swix(OS_SpriteOp, r);
+}
+
+
+
+static void setfromarea(int op, sprite_area *area, os_regset *r)
+{
+  if (area == sprite_mainarea)
+  {
+    r->r[0] = op;
+/*  r->r[1] unused */
+  }
+  else
+  {
+    r->r[0] = op + 256;
+    r->r[1] = (int) area;
+  }
+}
+
+
+
+static void setfromtag(int op, sprite_area *area, sprite_id *spr, os_regset *r)
+{
+  if (area == sprite_mainarea)
+  {
+    r->r[0] = op;
+ /* r->r[1] unused */
+  }
+  else
+  {
+    r->r[1] = (int) area;
+    if ((spr->tag) == sprite_id_addr)
+    {
+      r->r[0] = 512 + op;
+      r->r[2] = (int) (spr->s.addr);
+    }
+    else
+    {
+      r->r[0] = 256 + op;
+      r->r[2] = (int) (spr->s.name);
+    }
+  }
+}
+
+
+
+os_error * sprite_put_char_scaled(char ch,
+                                  int x, int y,
+                                  sprite_factors *factors)
+{
+  os_regset r;
+  os_error *result;
+  r.r[0] = 51;
+  r.r[1] = ch;
+  r.r[3] = x;
+  r.r[4] = y;
+  r.r[6] = (int) factors;
+  result = sprite__op(&r);
+  return result;
+}
+
+
+
+
+void sprite_area_initialise(sprite_area *area, int length)
+{
+  area->size    = length; /* No SpriteOp to do this ! */
+  area->number  = 0;
+  area->sproff  = 16;
+  area->freeoff = 16;
+}
+
+
+
+
+os_error * sprite_area_load(sprite_area *area, const char *filename)
+{
+  os_regset r;
+  os_error *result;
+  setfromarea(10, area, &r);
+  r.r[2] = (int) filename;
+  result = sprite__op(&r);
+  return result;
+}
+
+
+
+os_error * sprite_area_save(sprite_area *area, const char *filename)
+{
+  os_regset r;
+  os_error *result;
+  setfromarea(12, area, &r);
+  r.r[2] = (int) filename;
+  result = sprite__op(&r);
+  return result;
+}
+
+
+
+os_error * sprite_area_merge(sprite_area *area, const char *filename)
+{
+  os_regset r;
+  os_error *result;
+  setfromarea(11, area, &r);
+  r.r[2] = (int) filename;
+  result = sprite__op(&r);
+  return result;
+}
+
+
+
+static newsprite_header * sprite_find(sprite_area * areap,char * name)
+{
+ int * p;
+ int * q;
+ int   last;
+ int   offset;
+
+ offset=areap->sproff;      /* offset to first sprite */
+ last=areap->freeoff;
+
+ p=(int*)areap;
+ q=p+(last/sizeof(int));
+
+ while(1)
+ {
+  p+=(offset/sizeof(int));  /* point to first sprite */
+		if(p>=q) break;
+
+  offset=*p;
+
+  if(!cstrncmp((char*)(p+1),name,12))
+  {
+   return((newsprite_header*)p);
+  }
+ }
+
+ return(NULL);
+}
+
+
+static void Xsetfromtag(sprite_area *area, sprite_id *spr,newsprite_header ** sphp)
+{
+ if (area == sprite_mainarea)
+ {
+  // r->r[0] = op;
+  // r->r[1] unused */
+  *sphp=NULL;          // can't do anything in this case, system sprite area...
+ }
+ else
+ {
+  if((spr->tag)==sprite_id_addr)
+  {
+   // r->r[0] = 512 + op;
+   *sphp=(newsprite_header*)(spr->s.addr);
+  }
+  else
+  {
+   // r->r[0] = 256 + op;
+   *sphp=sprite_find(area,spr->s.name);
+  }
+ }
+}
+
+
+
+
+
+
+
+os_error * sprite_readsize(sprite_area *area, sprite_id *spr,
+                           sprite_info *resultinfo)
+{
+ os_regset           r;
+ os_error          * err;
+ newsprite_header  * sph;
+ int                 spbpp;
+ int                 bitwidth;
+
+
+ Xsetfromtag(area,spr,&sph);
+ if(sph)
+ {
+  if(spriteheader_class(sph)==SPRITE_RISCOS5)
+  {
+   err=Xgetspriteinfo((newsprite_header*)sph,NULL,NULL,&spbpp);
+   bitwidth=32*(sph->width+1)-sph->lbit-(31-sph->rbit);
+
+   resultinfo->width=bitwidth/spbpp;
+   resultinfo->height=sph->height+1;
+   resultinfo->mask=(sph->mask>sph->image);
+   resultinfo->mode=sph->selector.mode.mode;
+   return(err);
+  }
+ }
+
+ setfromtag(40, area, spr, &r);
+ err = sprite__op(&r);
+
+ resultinfo->width = r.r[3];
+ resultinfo->height = r.r[4];
+ resultinfo->mask = r.r[5];
+ resultinfo->mode = r.r[6];
+
+ return(err);
+}
+
+
+
+
+os_error * sprite_put_given(sprite_area *area, sprite_id *spr, int gcol_action,
+                            int x, int y)
+{
+  os_regset r;
+  os_error *result;
+  setfromtag(34, area, spr, &r);
+  r.r[3] = x;
+  r.r[4] = y;
+  r.r[5] = gcol_action;
+  result = sprite__op(&r);
+  return result;
+}
+
+
+
+
+
+
+
+
+os_error * sprite_put_scaled(sprite_area *area, sprite_id *spr,
+                             int gcol_action,
+                             int x, int y,
+                             sprite_factors  *factors,
+                             sprite_pixtrans *pixtrans)
+{
+  os_regset r;
+  os_error *result;
+
+/*  for(i=0;i<256;i++) if(pixtrans[i]!=i) break;
+  if(i==256) pixtrans=(sprite_pixtrans *)(-1); */
+
+  setfromtag(52, area, spr, &r);
+  r.r[3] = x;
+  r.r[4] = y;
+  r.r[5] = gcol_action;
+  r.r[6] = (int) factors;
+  r.r[7] = (int) pixtrans;
+  result = sprite__op(&r);
+  return result;
+}
+
+
+
+
+os_error * sprite_put_trans(sprite_area *area, sprite_id *spr,int gcol_action,
+                            sprite_transform * trans,sprite_pixtrans *pixtrans)
+{
+ os_regset  r;
+ os_error * result;
+
+ setfromtag(56, area, spr, &r);
+ r.r[3]=(gcol_action>>8) & 0xFF;
+ r.r[4]=0;
+ r.r[5]=gcol_action & 0xFF;
+ r.r[6]=(int)trans;
+ r.r[7]=(int) pixtrans;
+ result=sprite__op(&r);
+
+ return(result);
+}
+
+
+
+os_error * sprite_create(sprite_area *area, char *name, sprite_palflag palflag,
+                         int width, int height, int mode)
+{
+  os_regset r;
+  os_error *result;
+  setfromarea(15, area, &r); /* NB. Not all done in numeric order !! */
+  r.r[2] = (int) name;
+  r.r[3] = palflag;
+  r.r[4] = width;
+  r.r[5] = height;
+  r.r[6] = mode;
+  result = sprite__op(&r);
+  return result;
+}
+
+

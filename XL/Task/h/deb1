@@ -1,0 +1,9 @@
+/*->h.deb1 */
+
+
+
+extern int deb1(int code);
+
+
+
+

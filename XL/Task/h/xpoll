@@ -1,0 +1,7 @@
+/*->h.xpoll */
+
+extern os_error * wimp_pollx(wimp_emask mask,wimp_eventstr * result,
+                                           int * pollword);
+extern os_error * wimp_pollidlex(wimp_emask mask,wimp_eventstr *result,
+                                               int earliest,int * pollword);
+

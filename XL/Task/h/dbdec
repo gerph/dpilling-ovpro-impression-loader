@@ -1,0 +1,24 @@
+/*->h.dbdec */
+
+
+typedef struct deciconstr
+{
+ int icon;
+ int value;
+ int key;
+
+} deciconstr;
+
+
+typedef struct decstr
+{
+ int          template;
+ int          messageicon;
+
+ deciconstr * icon;
+
+} decstr;
+
+
+
+extern os_error * decbox(decstr * dec,int * result,char * format,...);

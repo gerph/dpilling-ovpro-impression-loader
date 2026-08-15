@@ -1,0 +1,25 @@
+/*->h.ram */
+
+extern int        readmyref;
+extern int        writemyref;
+
+extern int        readextent;
+
+extern os_error * armfetch(wimp_msgstr * msg);
+extern os_error * ramloadbuffer(wimp_msgstr * msg);
+
+extern os_error * ramnextreadfile(wimp_msgstr * msg);
+extern os_error * ramnextwritefile(wimp_msgstr * msg);
+
+extern os_error * ramoff(void);
+
+extern os_error * ramclose(os_error * err);
+extern os_error * ramwriten(void * buff,int size,int * n);
+extern os_error * ramreadn(void * buff,int size,int * n);
+
+extern os_error * writemess(wimp_msgstr * msg);
+extern os_error * readmess(wimp_msgstr * msg);
+
+extern int pendingramwrite(void);
+extern int pendingramread(void);
+

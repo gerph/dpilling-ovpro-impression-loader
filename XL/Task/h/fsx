@@ -1,0 +1,75 @@
+/*->h.fsx */
+
+
+#define FSMAXLEAF 256
+#define FSMAXPATH 1024
+
+
+typedef struct fstat
+{
+  int  object;
+  int  length;
+  int  load;
+  int  exec;
+  int  acc;
+  int  type;
+} fstat;
+
+
+
+typedef struct fxstat
+{
+ fstat f;
+ char  name[FSMAXLEAF];
+} fxstat;
+
+
+
+
+
+#define CODE -1
+#define APP   0x2000
+#define DIR   0x1000
+
+extern os_error * fs_eof(int fh,int * eof);
+extern os_error * fs_tell(int fh,int * posn);
+extern os_error * fs_open(char * name,int mode,int * fh);
+extern os_error * fs_close(int fh,os_error * ep);
+extern os_error * fs_readat(int fh,void * b,int n,int at);
+extern os_error * fs_readn(int fh,void * b,int n,int * read);
+extern os_error * fs_read(int fh,void * b,int n);
+extern os_error * fs_getc(int fh,int * c);
+extern os_error * fs_writen(int fh,void * b,int n,int * write);
+extern os_error * fs_write(int fh,void * b,int n);
+extern os_error * fs_writeat(int fh,void * b,int n,int at);
+extern os_error * fs_seek(int fh,int posn);
+extern os_error * fs_setfileextent(int fh,int ex);
+extern os_error * fs_saveblock(char *name,int type,void * start,int len);
+extern os_error * fs_loadblock(char *name,void * start);
+extern os_error * fs_delete(char * name);
+extern os_error * fs_rename(char * old,char * new);
+extern void       fs_startscan(void);
+extern void       fs_savescan(int * save);
+extern void       fs_loadscan(int save);
+extern os_error * fs_nextitem(char * dirname,fxstat * f,char * wild,int * eof);
+extern os_error * fs_settype(char * filename,int type);
+extern char     * fs_leaf(char * filename);
+extern int        fs_filetype(int load);
+extern os_error * fs_stat(char * name,fstat * f);
+extern os_error * fs_stamp(char * name,fstat * f);
+extern os_error * fs_exists(char * name,int * type);
+extern os_error * fs_create(char * name,int length,int type);
+extern os_error * fs_cdir(char * name);
+extern os_error * fs_wipe(char * name);
+extern     char * fs_typestring(int type);
+
+
+
+/* c.fsx2 */
+
+
+extern os_error * makefilename(char * oldleaf,char * newpathname,
+                                              char * path,int over);
+
+
+

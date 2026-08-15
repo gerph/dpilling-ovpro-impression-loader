@@ -1,0 +1,603 @@
+/*->c.alloc */
+
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <stdio.h>
+
+
+#include "h.os"
+#include "h.werr"
+#include "h.wimp"
+#include "h.wimpt"
+#include "h.err"
+#include "h.flex"
+#include "h.alloc"
+
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+ * A  "smarter" malloc                          William L. Sebok
+ *                      Then modified by Arthur David Olsen
+ *                      MALLOCTRACE added by Mark Brader
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+ *      Algorithm:
+ *       Assign to each area an index "n". This is currently proportional to
+ *      the log 2 of size of the area rounded down to the nearest integer.
+ *      Then all free areas of storage whose length have the same index n are
+ *      organized into a chain with other free areas of index n (the "bucket"
+ *      chain). A request for allocation of storage first searches the list of
+ *      free memory.  The search starts at the bucket chain of index equal to
+ *      that of the storage request, continuing to higher index bucket chains
+ *      if the first attempt fails.
+ *      If the search fails then new memory is allocated.  Only the amount of
+ *      new memory needed is allocated.  Any old free memory left after an
+ *      allocation is returned to the free list.
+ *
+ *        All memory areas (free or busy) handled by malloc are also chained
+ *      sequentially by increasing address (the adjacency chain).  When memory
+ *      is freed it is merged with adjacent free areas, if any.  If a free area
+ *      of memory ends at the end of memory (i.e. at the break), and if the
+ *      variable "endfree" is non-zero, then the break is contracted, freeing
+ *      the memory back to the system.
+ *
+ *      Notes:
+ *              ov_length field includes sizeof(struct overhead)
+ *              adjacency chain includes all memory, allocated plus free.
+ */
+
+/* the following items may need to be configured for a particular machine */
+
+/* alignment requirement for machine (in bytes) */
+#define NALIGN  4
+
+/* size of an integer large enough to hold a character pointer */
+typedef int     Size;
+
+
+#define MAGIC_FREE      0x548a934c
+#define MAGIC_BUSY      0xc139569a
+
+#define NBUCKETS        18
+
+struct qelem {
+        struct qelem *q_forw;
+        struct qelem *q_back;
+};
+
+struct overhead {
+        long            ov_magic;
+        struct qelem    ov_adj;         /* adjacency chain pointers */ 
+        struct qelem    ov_buk;         /* bucket chain pointers */
+        Size            ov_length;
+};
+
+/*
+ * The following macros depend on the order of the elements in struct overhead
+ */
+#define TOADJ(p)     ((struct qelem *)((char*)p+sizeof(int)))
+#define FROMADJ(p)   ((struct overhead *)((char*)p-sizeof(int)))
+#define FROMBUK(p)   ((struct overhead *)((char*)p-sizeof(struct qelem)-sizeof(int)))
+#define TOBUK(p)  ((struct qelem *)((char*)p+sizeof(struct qelem)+sizeof(int)))
+
+/*
+ * return to the system memory freed adjacent to the break 
+ * default is Off
+ */
+
+static int endfree;
+
+/* sizes of buckets currently proportional to log 2() */
+static Size mlsizes[] = {0, 64, 128, 256, 512, 1024, 2048,
+        4096, 8192, 16384, 32768, 65536, 131072,
+        262144, 524288, 1048576, 2097152, 4194304};
+
+/* head of adjacency chain */
+static struct qelem adjhead = { &adjhead, &adjhead };
+
+/* head of bucket chains */
+static struct qelem buckets[NBUCKETS] = 
+{
+        &buckets[0],  &buckets[0],      &buckets[1],  &buckets[1],
+        &buckets[2],  &buckets[2],      &buckets[3],  &buckets[3],
+        &buckets[4],  &buckets[4],      &buckets[5],  &buckets[5],
+        &buckets[6],  &buckets[6],      &buckets[7],  &buckets[7],
+        &buckets[8],  &buckets[8],      &buckets[9],  &buckets[9],
+        &buckets[10], &buckets[10],     &buckets[11], &buckets[11],
+        &buckets[12], &buckets[12],     &buckets[13], &buckets[13],
+        &buckets[14], &buckets[14],     &buckets[15], &buckets[15],
+        &buckets[16], &buckets[16],     &buckets[17], &buckets[17]
+};
+
+static struct qelem *  hifreebp = &buckets[0];
+
+
+
+/*
+ * CURBRK returns the value of the current system break, i.e., the system's
+ * idea of the highest legal address in the data area.  It is defined as
+ * a macro for the benefit of systems that have provided an easier way to
+ * obtain this number (such as in an external variable)
+ */
+
+#define CURBRK (allocbase+allocsize)
+
+/*
+ * note that it is assumed that CURBRK remembers the last requested break to
+ * the nearest byte (or at least the nearest word) rather than the nearest page
+ * boundary.  If this is not true then the following BRK macro should be
+ * replaced with one that remembers the break to within word-size accuracy.
+ */
+
+#define BRK(p) allocinc(p)
+
+
+#define ACHUNK 0x1000
+
+static char * allocbase;
+static int    allocsize;
+
+/* try to reset top of alloc block */
+
+static os_error * allocinc(char * p)
+{
+ os_error * err;
+ err=flex_chunk((flex_ptr)&allocbase,p-allocbase,ACHUNK);
+ if(!err) allocsize=p-allocbase;
+
+/* dprintf(2,"allocsize=%d",allocsize); */
+
+ return(err);
+}
+
+
+os_error * initalloc(void)
+{
+ os_error * err;
+ err=flex_alloc((flex_ptr)&allocbase,ACHUNK);
+ allocsize=0;
+ endfree=1;
+ return(err);
+}
+
+
+
+
+void allocdebug(void)
+{
+ struct overhead * p;
+
+
+ printf("allocdebug size=%d\n",allocsize);
+
+ p=(struct overhead *)allocbase;
+ while(1)
+ {
+  printf("offset=%d length=%d magic=%x\n",((char*)p)-allocbase,
+                                          p->ov_length,
+                                          p->ov_magic);
+
+  p=(struct overhead *)(((char*)p)+p->ov_length);
+
+  if(((char*)p)>=CURBRK) break;
+
+ }
+}
+
+
+
+
+/* insert "item" after "queu" */
+
+static void insque(register struct qelem * item,register struct qelem * queu)
+{
+ register struct qelem *pueu;
+
+ pueu=queu->q_forw;
+ item->q_forw=pueu;
+ item->q_back=queu;
+ queu->q_forw=item;
+ pueu->q_back=item;
+}
+
+
+/* remove "item" */
+
+static void remque(register struct qelem * item)
+{
+ register struct qelem * queu;
+ register struct qelem * pueu;
+
+ pueu=item->q_forw;
+ queu=item->q_back;
+ queu->q_forw=pueu;
+ pueu->q_back=queu;
+}
+
+
+
+static os_error * mlfree_end(void)
+{
+ os_error * err;
+ register struct overhead * p;
+
+
+ err=NULL;
+ p=FROMADJ(adjhead.q_back);
+
+       /* area is free and at end of memory */
+ if (p->ov_magic==MAGIC_FREE && (char*)p+p->ov_length==(char *)CURBRK)
+ {
+  p->ov_magic=NULL;     /* decommission (just in case) */
+
+  /* remove from end of adjacency chain */
+  remque(TOADJ(p));
+
+  /* remove from bucket chain */
+  remque(TOBUK(p));
+
+  /* release memory to system */
+  err=BRK((char *)p);
+ }
+ return(err);
+}
+
+
+
+/*
+ * select the proper size bucket
+ */
+
+static Size mlindx(Size n)
+{
+ register Size *p;
+
+ p=mlsizes;
+ p[NBUCKETS-1]=n;
+
+ /* Linear search. */
+
+ while(n>*p++);
+
+ return((p-1)-mlsizes);
+}
+
+
+
+
+
+os_error * sfree(void ** mem)
+{
+ register struct overhead * p;
+ register struct overhead * q;
+ register struct qelem    * bp;
+
+ if(*mem==NULL) return(NULL);
+
+ p=(struct overhead *)((char *)(*mem) - sizeof(struct overhead));
+
+ /* not advised but allowed */
+
+ if(p->ov_magic==MAGIC_FREE) return(geterror(EMEMAF));
+
+ if(p->ov_magic!=MAGIC_BUSY) return(geterror(EMEMBF));
+
+ /* try to merge with previous free area */
+
+ q=FROMADJ((TOADJ(p))->q_back);
+
+ if(q!=FROMADJ(&adjhead))
+ {
+  if(q>=p)
+  {
+   return(geterror(EMEMAD));
+  }
+
+  /* If lower segment can be merged */
+  if(q->ov_magic==MAGIC_FREE && (char *)q+q->ov_length==(char *)p)
+  {
+   /* remove lower address area from bucket chain */
+
+   remque(TOBUK(q));
+
+   /* remove upper address area from adjacency chain */
+   remque(TOADJ(p));
+
+   q->ov_length+=p->ov_length;
+   p->ov_magic=NULL;     /* decommission */
+   p = q;
+  }
+ }
+
+ /* try to merge with next higher free area */
+ 
+ q=FROMADJ((TOADJ(p))->q_forw);
+
+ if(q!=FROMADJ(&adjhead))
+ {
+  /* upper segment can be merged */
+  if(q<=p)
+  {
+   return(geterror(EMEMAD));
+  }
+
+  if(q->ov_magic==MAGIC_FREE && (char *)p+p->ov_length==(char *)q)
+  {
+   /* remove upper from bucket chain */
+   remque(TOBUK(q));
+
+   /* remove upper from adjacency chain */
+   remque(TOADJ(q));
+
+   p->ov_length += q->ov_length;
+   q->ov_magic = NULL;     /* decommission */
+  }
+ }
+
+ p->ov_magic=MAGIC_FREE;
+
+ /* place in bucket chain */
+
+ bp=&buckets[mlindx(p->ov_length)];
+ if(bp>hifreebp) hifreebp=bp;
+ insque(TOBUK(p),bp);
+
+ *mem=NULL;
+
+ if(endfree) return(mlfree_end());
+ else        return(NULL);
+}
+
+
+
+
+
+
+
+os_error * ralloc(void ** mem,int nbytes)
+{
+ os_error                 * err;
+ register struct overhead * p;
+ register struct overhead * q;
+ register struct qelem    * bucket;
+ register struct qelem    * b;
+ register Size              surplus;
+ register struct qelem    * bp;
+ register Size              i;
+
+ err=NULL;
+ nbytes=((nbytes+(NALIGN-1)) & ~(NALIGN-1))+sizeof(struct overhead);
+
+ for(
+      bucket=&buckets[mlindx((Size) nbytes)];
+      bucket<=hifreebp;
+      bucket++
+    )
+ { 
+  for(b=bucket->q_forw;b!= bucket;b = b->q_forw)
+  {
+   p=FROMBUK(b);
+   if(!(p->ov_magic==MAGIC_FREE)) return(geterror(EMEMFE));
+
+   if(p->ov_length>=nbytes)
+   {
+    remque(b);
+    surplus=p->ov_length-nbytes;
+    goto foundit;
+   }
+  }
+ }
+
+ /* obtain additional memory from system */
+
+ p=(struct overhead *)CURBRK;
+
+ i=((Size)p)&(NALIGN-1);
+ if(i!=0) p=(struct overhead *)((char *)p+NALIGN-i);
+
+ if((err=BRK((char *)p+nbytes))!=NULL) return(err);
+
+ p->ov_length=nbytes;
+ surplus=0;
+
+ /* add to end of adjacency chain */
+
+ if(!((FROMADJ(adjhead.q_back))<p)) return(geterror(EMEMCH));
+
+ insque(TOADJ(p),adjhead.q_back);
+
+foundit:   /* mark surplus memory free */
+ if(surplus>(int)sizeof(struct overhead))
+ {
+  /* if big enough, split it up */
+  q=(struct overhead *)((char *)p + nbytes);
+
+  q->ov_length=surplus;
+  p->ov_length=nbytes;
+  q->ov_magic=MAGIC_FREE;
+
+  /* add surplus into adjacency chain */
+  insque(TOADJ(q),TOADJ(p));
+
+  /* add surplus into bucket chain */
+
+  bp=&buckets[mlindx(surplus)];
+  if(bp>hifreebp) hifreebp=bp;
+  insque(TOBUK(q),bp);
+ }
+
+ p->ov_magic=MAGIC_BUSY;
+ *mem=((char*)p + sizeof(struct overhead));
+
+ return(err);
+}
+
+
+
+os_error * salloc(void ** mem,int nbytes)
+{
+ os_error * err;
+
+ err=ralloc(mem,nbytes);
+ if(!err) memset(*mem,0,nbytes);
+
+ return(err);
+}
+
+
+
+os_error * srealloc(void ** handle,int nbytes)
+{
+ os_error        * err;
+ char            * newmem;
+ char            * mem;
+ struct overhead * p;
+ struct overhead * q;
+ Size              surplus;
+ Size              length;
+ Size              oldlength;
+ int               oendfree;
+ struct qelem    * bp;
+
+
+ mem=(char*)(*handle);
+ newmem=NULL;
+
+
+ if(mem==NULL) return(salloc(handle,nbytes));
+
+ /* if beyond current arena it has to be bad */
+
+ if(mem>(char*)FROMADJ(adjhead.q_back)+sizeof(struct overhead))
+                                               return(geterror(EMEMBAD));
+        
+
+ p=(struct overhead *)(mem - sizeof(struct overhead));
+
+
+ if(p->ov_magic!=MAGIC_BUSY && p->ov_magic!=MAGIC_FREE) 
+                                               return(geterror(EMEMBAD));
+
+
+ oldlength=p->ov_length;
+
+
+ nbytes=((nbytes+(NALIGN-1)) & (~(NALIGN-1)))+sizeof(struct overhead);
+
+ if(oldlength==nbytes) return(NULL);
+
+/* dprintf(0,"realloc");  */
+
+
+ if(p->ov_magic==MAGIC_BUSY)
+ {
+  /* free may claim adjacent free memory, compacting storage */
+  oendfree=endfree;
+  endfree=0;
+  sfree(handle);      /* free it but don't let it contract break */
+  endfree=oendfree;
+  if(p->ov_magic!=MAGIC_FREE)
+  {        /* check if moved */
+   p=FROMADJ(p->ov_adj.q_back);
+   newmem=(char *)p+sizeof(struct overhead);
+  }
+ }
+
+ if(!(p->ov_magic==MAGIC_FREE)) return(geterror(EMEMBAD));
+
+ /*
+  **  We wait to set length until after any possible compaction.
+  */
+
+ length=p->ov_length;
+ surplus=length-nbytes;
+ if(surplus>=0)
+ {
+  /* present location large enough */
+  remque(TOBUK(p));
+  p->ov_magic=MAGIC_BUSY;
+ }
+ else
+ if(((char *)p+p->ov_length)==CURBRK)
+ {
+  /* if at break, grow in place */
+  if((err=BRK((char*)p+nbytes))!=NULL) return(err);
+  p->ov_length=nbytes;
+  remque(TOBUK(p));
+  p->ov_magic=MAGIC_BUSY;
+ }
+ else
+ {
+  if((err=salloc((flex_ptr)&newmem,nbytes-sizeof(struct overhead)))!=NULL) 
+                                                                  return(err);
+  surplus=0;
+ }
+
+
+ /* if returned address is different, move data */
+ if(newmem!=NULL)
+ {
+  /* note: it is assumed that bcopy does the right thing on
+   * overlapping extents (true on the vax)
+   */
+
+  memmove(newmem, mem,
+                        ((oldlength < nbytes) ? oldlength : nbytes) -
+                        sizeof(struct overhead));
+  mem=newmem;
+ }   
+
+ /* if more memory than we need then return excess to buckets */
+
+ if(surplus>(int)sizeof(struct overhead))
+ {
+  q=(struct overhead *)((char *)p+nbytes);
+  q->ov_length=surplus;
+  q->ov_magic=MAGIC_FREE;
+
+  insque(TOADJ(q),TOADJ(p));
+
+  bp=&buckets[mlindx(surplus)];
+  if(bp>hifreebp) hifreebp=bp;
+  insque(TOBUK(q),bp);
+
+  p->ov_length -= surplus;
+ }
+
+ if(endfree) err=mlfree_end();
+ else        err=NULL;
+
+ *handle=mem;
+
+ return(err);
+}
+
+
+
+/* called when we propose to change amount of stuff in a block */
+
+os_error * schunk(void ** handle,int size,int chunksize)
+{
+ char            * mem;
+ struct overhead * p;
+ int               length;
+
+ mem=(char*)(*handle);
+ if(!mem)
+ {
+  return(salloc(handle,chunksize));
+ }
+ else
+ {
+  p=(struct overhead *)(mem - sizeof(struct overhead));
+
+  length=p->ov_length-sizeof(struct overhead);
+
+  if((size>=length) || (length>(size+chunksize)))
+  {
+   return(srealloc(handle,(size/chunksize+1)*chunksize));
+  }
+ }
+ return(NULL);
+}
+
+

@@ -1,0 +1,1200 @@
+/*->c.wos */
+
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <signal.h>
+#include <ctype.h>
+#include <time.h>
+#include <stdarg.h>
+
+#include "h.os"
+#include "h.wimp"
+#include "h.sprite"
+#include "h.werr"
+#include "h.wimpt"
+#include "h.bbc"
+#include "h.akbd"
+#include "h.kernel"
+
+#include "h.swis"
+
+#include "h.err"
+#include "h.sp"
+#include "h.trans"
+#include "h.bits"
+#include "h.etc"
+#include "h.colour"
+
+#include "h.wos"
+
+#include "h.poll"
+
+
+
+vdustr cvdu;
+
+
+int hscrlbar=40;
+int vscrlbar=40;
+
+
+vdustr * getcvdu(void)
+{
+ return(&cvdu);
+}
+
+
+
+/* os_error * getdeltas(int mode,int * dx,int * dy) - see c.colour */
+
+
+void getcurdeltas(int * dx,int * dy)
+{
+ int lndeltax=bbc_vduvar(bbc_XEigFactor);
+ int lndeltay=bbc_vduvar(bbc_YEigFactor);
+ *dx=(1 << lndeltax);
+ *dy=(1 << lndeltay);
+}
+
+
+/* os_error * getbpp(int mode,int * rln2bpp,int * bitmask) - see c.colour */
+
+
+
+void vdupalvars2(vdustr * vdu)
+{
+ int i;
+
+ wimp_readpalette(&vdu->vdupal);
+
+ for(i=0;i<16;i++) 
+ {
+  vdu->wimpcolnos[i]=getcolnumber(vdu->vdupal.c[i].word & 0xFFFFFF00);
+ }
+}
+
+
+void vdumodevars2(vdustr * vdu)
+{
+ int xpic;
+ int ypic;
+
+ vdu->mode=wimpt_mode();
+
+ xpic=bbc_vduvar(bbc_XWindLimit);
+ ypic=bbc_vduvar(bbc_YWindLimit);
+
+ vdu->lndeltax=bbc_vduvar(bbc_XEigFactor);
+ vdu->lndeltay=bbc_vduvar(bbc_YEigFactor);
+ vdu->deltax=(1 << (vdu->lndeltax));
+ vdu->deltay=(1 << (vdu->lndeltay));
+
+ vdu->maskx=0xFFFFFFFF-(vdu->deltax-1);
+ vdu->masky=0xFFFFFFFF-(vdu->deltay-1);
+
+ vdu->screenx=(xpic+1)*vdu->deltax;
+ vdu->screeny=(ypic+1)*vdu->deltay;
+
+ vdu->ncolours=bbc_vduvar(bbc_NColour);
+
+ vdu->gcharsizex=bbc_vduvar(bbc_GCharSizeX);
+ vdu->gcharsizey=bbc_vduvar(bbc_GCharSizeY);
+ vdu->gcharspacex=bbc_vduvar(bbc_GCharSpaceX);
+ vdu->gcharspacey=bbc_vduvar(bbc_GCharSpaceY);
+ vdu->ln2bpp=bbc_vduvar(bbc_Log2BPP); 
+
+ vdu->modeflags=bbc_vduvar(bbc_ModeFlags);
+
+ if((vdu->modeflags & (3<<12))==0)
+ {
+  vdu->rgbmode=(vdu->modeflags & (1<<14));
+ }
+
+ vdupalvars2(vdu);
+}
+
+
+void vdumodevars(void)
+{
+ vdumodevars2(&cvdu);
+}
+
+void vdupalvars(void)
+{
+ vdupalvars2(&cvdu);
+}
+
+
+
+os_error * select(int handle,int icon)
+{
+ return(wimp_set_icon_state((wimp_w)handle,(wimp_i)icon,
+                           (wimp_iconflags)0x200000,(wimp_iconflags)0x200000));
+}
+
+
+os_error * deselect(int handle,int icon)
+{
+ return(wimp_set_icon_state((wimp_w)handle,(wimp_i)icon,
+                             (wimp_iconflags)0,(wimp_iconflags)0x200000));
+}
+
+
+os_error * selectst(int handle,int icon,int state)
+{
+ if(state) return(select(handle,icon));
+ else      return(deselect(handle,icon));
+}
+
+
+os_error * shadeicon(int window,int icon)
+{
+ return(wimp_set_icon_state((wimp_w)window,(wimp_i)icon,
+                           (wimp_iconflags)0x400000,(wimp_iconflags)0x400000));
+}
+
+
+os_error * unshadeicon(int window,int icon)
+{
+ return(wimp_set_icon_state((wimp_w)window,(wimp_i)icon,
+                           (wimp_iconflags)0x000000,(wimp_iconflags)0x400000));
+}
+
+
+os_error * shadeicon2(int window,int icon)
+{
+ return(wimp_set_icon_state((wimp_w)window,(wimp_i)icon,
+                         (wimp_iconflags)0x3000000,(wimp_iconflags)0xF000000));
+}
+
+os_error * unshadeicon2(int window,int icon)
+{
+ return(wimp_set_icon_state((wimp_w)window,(wimp_i)icon,
+                         (wimp_iconflags)0x7000000,(wimp_iconflags)0xF000000));
+}
+
+
+os_error * makemenuicon(int window,int icon)
+{
+ return(wimp_set_icon_state((wimp_w)window,(wimp_i)icon,
+                         (wimp_iconflags)0x9000,(wimp_iconflags)0xF000));
+}
+
+
+os_error * unmakemenuicon(int window,int icon)
+{
+ return(wimp_set_icon_state((wimp_w)window,(wimp_i)icon,
+                          (wimp_iconflags)0x0,(wimp_iconflags)0xF000));
+}
+
+
+os_error * makemenust(int window,int icon,int state)
+{
+ if(state) return(makemenuicon(window,icon));
+ else      return(unmakemenuicon(window,icon));
+}
+
+
+os_error * shadeiconst(int window,int icon,int state)
+{
+ if(state) return(shadeicon(window,icon));
+ else      return(unshadeicon(window,icon));
+}
+
+os_error * writeableicon(int window,int icon)
+{
+ return(wimp_set_icon_state((wimp_w)window,(wimp_i)icon,
+                              (wimp_iconflags)0xF000,(wimp_iconflags)0xF000));
+}
+
+os_error * unwriteableicon(int window,int icon)
+{
+ return(wimp_set_icon_state((wimp_w)window,(wimp_i)icon,
+                              (wimp_iconflags)0x6000,(wimp_iconflags)0xF000));
+}
+
+os_error * writeableiconst(int window,int icon,int state)
+{
+ if(state) return(writeableicon(window,icon));
+ else      return(unwriteableicon(window,icon));
+}
+
+
+os_error * changepointer(int type,pointstr * pointdata,char * sprites)
+{
+ os_regset  rx;
+ os_error * err;
+ int        magblk[4];
+
+
+ if(type>0)  /* USERPOINTER */
+ {
+  rx.r[0]=0x100+36;
+  rx.r[1]=(int)sprites;
+  rx.r[2]=(int)pointdata->name;
+  rx.r[3]=2;
+  rx.r[4]=pointdata->x;  /* offset of active point */
+  rx.r[5]=pointdata->y;
+  if(type & 0x2) 
+  {
+   rx.r[6]=(int)magblk;
+   magblk[0]=magblk[1]=magblk[2]=magblk[3]=1;
+  }
+  else
+  {
+   rx.r[6]=0;                      /* (int)magblk;   pointer to mag factors */
+  }
+
+  rx.r[7]=0; /*(int)tpixtrn; */    /*  pixel trans table                    */
+
+  err=os_swix(OS_SpriteOp,&rx);
+/*  bbc_vduq(19,3,25,0,0,0);
+  bbc_vduq(19,1,25,255,255,255); */
+ }
+ else
+ if(type==NOPOINTER)
+ {
+  err=os_cli("pointer 0");
+ }
+ else  /* SYSTEMPOINTER */
+ {
+ /* err=os_cli("pointer 0"); */
+  err=os_cli("pointer 1");
+ }
+
+ return(err);
+}
+
+
+
+/*
+int fixbuttons(int bbits)
+{
+ int           m1;
+ int           m2;
+
+ m1=(bbits>>2) & 0x111;
+ m2=(bbits<<2) & 0x444;
+
+ bbits=(bbits & 0x222)|m2|m1;
+
+ return(bbits);
+}
+*/
+
+
+
+
+os_error * getpointer(mousestr * mouse)
+{
+ os_error      * err;
+ wimp_mousestr   mstr;
+
+ err=wimp_get_point_info(&mstr);
+
+ mouse->x=mstr.x;
+ mouse->y=mstr.y;
+ mouse->buttons=mstr.bbits;
+ mouse->handle=mstr.w;
+ mouse->icon  =mstr.i;
+
+ return(err);
+}
+
+
+os_error * getospointer(mousestr * mouse)
+{
+ os_error      * err;
+ os_regset       rx;
+
+ err=os_swix(OS_Mouse,&rx);
+
+ mouse->x=rx.r[0];
+ mouse->y=rx.r[1];
+ mouse->buttons=rx.r[2];
+ mouse->handle=rx.r[3];     /* time of button change... */
+
+ return(err);
+}
+
+
+
+
+void getws(windowstr * window,wimp_openstr * o)
+{
+ window->x0=o->box.x0;
+ window->y0=o->box.y0;
+ window->x1=o->box.x1;
+ window->y1=o->box.y1;
+ window->scx=o->x;
+ window->scy=o->y;
+ window->bhandle=o->behind;
+ window->bx=o->box.x0-o->x;
+ window->by=o->box.y1-o->y;
+}
+
+
+os_error * getw(int handle,windowstr * window)
+{
+ os_error *  err;
+ wimp_wstate winds;
+
+ err=wimp_get_wind_state(handle,&winds);
+ getws(window,&winds.o);
+ window->wflags=winds.flags;
+
+ return(err);
+}
+
+
+os_error * geti(int handle,int icon,iconstr * icons)
+{
+ os_error * err;
+ wimp_icon istate;
+
+ err=wimp_get_icon_info(handle,icon,&istate);
+ icons->ix0=istate.box.x0;
+ icons->iy0=istate.box.y0;
+ icons->ix1=istate.box.x1;
+ icons->iy1=istate.box.y1; 
+
+ return(err);
+}
+
+
+
+os_error * open(int handle,int x0,int y0,int x1,int y1,int scx,int scy,
+                                                               int behind)
+{
+ wimp_openstr oblock;
+ oblock.w=handle;
+ oblock.box.x0=x0;
+ oblock.box.x1=x1;
+ oblock.box.y0=y0;
+ oblock.box.y1=y1;
+ oblock.x=scx;
+ oblock.y=scy;
+ oblock.behind=behind;
+ return(wimp_open_wind(&oblock));
+}
+
+
+
+/* offok flag controls if we are prepared for the window to be */
+/* completely off screen */
+
+
+int wonscreen(wimp_openstr * r)
+{
+ return(!(r->box.x0>=cvdu.screenx || r->box.x1<=0 || 
+          r->box.y0>=cvdu.screeny || r->box.y1<=0));
+}
+
+
+os_error * wcheckopen(wimp_openstr * o,int offok)
+{
+ os_error     * err;
+ wimp_openstr   r;
+
+ r=*o;
+ err=wimp_open_wind(o);
+ if(!err)
+ {
+  if(r.box.x0<0 || r.box.x1>cvdu.screenx || 
+     r.box.y0<0 || r.box.y1>cvdu.screeny)
+  {
+   if(offok || wonscreen(&r))
+   {
+    *o=r;
+    err=wimp_open_wind(o);
+   }
+  }
+ }
+ return(err);
+}
+
+
+
+os_error * extent(int handle,int x0,int y0,int x1,int y1)
+{
+ wimp_redrawstr eblock;
+
+ eblock.w=handle;
+ eblock.box.x0=x0;
+ eblock.box.y0=y0;
+ eblock.box.x1=x1;
+ eblock.box.y1=y1;
+
+ return(wimp_set_extent(&eblock));
+}
+
+
+os_error * iconaddr(int handle,int icon,char ** p)
+{ 
+ os_error * err;
+ static wimp_icon istate;
+
+ err=wimp_get_icon_info(handle,icon,&istate);
+
+ if(!err)
+ {
+  if(istate.flags & 0x100) *p=istate.data.indirecttext.buffer;
+  else                     *p=istate.data.text;
+ }
+ return(err);
+}
+
+
+
+os_error * caret(int handle,int icon,int x,int y,int height,int index)
+{
+ wimp_caretstr cblock;
+ cblock.w=handle;
+ cblock.i=icon;
+ cblock.x=x;
+ cblock.y=y;
+ cblock.height=height;
+ cblock.index=index;
+ return(wimp_set_caret_pos(&cblock));
+}
+
+
+os_error * iecarrot(int wh,int ih)
+{ 
+ os_error * err;
+ char     * p;
+
+ err=iconaddr(wh,ih,&p);
+ if(!err) err=caret(wh,ih,0,0,-1,strlen(p));
+
+ return(err);
+}
+
+
+
+os_error * incarrot(int wh,int ih)
+{
+ os_error * err;
+ char     * c;
+ char     * p;
+
+ err=iconaddr(wh,ih,&p);
+ if(!err)
+ {
+  c=p;
+  while(1)
+  {
+   if((*c<'0' || *c>'9') && *c!='.' && *c!='/') break;
+   c++;
+  }
+  err=caret(wh,ih,0,0,-1,c-p);
+ }
+
+ return(err);
+}
+
+
+
+
+os_error * setfocus(int handle)
+{
+ return(caret(handle,-1,200,200,20,0));
+}
+
+
+
+os_error * findcaret(int * chandle,int * cicon)
+{ 
+ os_error * err;
+ wimp_caretstr cblock;
+
+ err=wimp_get_caret_pos(&cblock);
+ *chandle=cblock.w;
+ *cicon=cblock.i;
+
+ return(err);
+}
+
+
+
+
+os_error * refreshicon(int window,wimp_icon * isblock)
+{
+ os_error       * err;
+ wimp_redrawstr   rblock;
+ int              more;
+
+ rblock.w=window;
+ rblock.box=isblock->box;
+  
+ err=wimp_update_wind(&rblock,&more);
+ if(!err)
+ {
+  while(more)
+  {
+   if((err=wimp_get_rectangle(&rblock,&more))!=NULL) break;
+  }
+ }
+ return(err);
+}
+
+
+
+os_error * iconlength(int window,int icon,int * len)
+{
+ os_error      * err;
+ wimp_icon       isblock;
+
+ err=wimp_get_icon_info(window,icon,&isblock);
+ if(!err)
+ {
+  if(isblock.flags & 0x100) *len=isblock.data.indirecttext.bufflen;
+  else                      *len=12;
+ }
+ else                       *len=0;
+
+ return(err);
+}
+
+
+
+os_error * writeicon(int window,int icon,char * string)
+{
+ os_error      * err;
+ wimp_icon       isblock;
+ wimp_icreate    iblock;
+ wimp_caretstr   cblock;
+ int             len;
+
+
+ err=wimp_get_caret_pos(&cblock);
+ if(!err) err=wimp_get_icon_info(window,icon,&isblock);
+
+ if(!err)
+ {
+  if(isblock.flags & 0x100)
+  {
+   if(isblock.flags & wimp_ITEXT)
+   {
+    xstrncpy(isblock.data.indirecttext.buffer,string,
+             isblock.data.indirecttext.bufflen);
+   }
+   else
+   {
+    strcpy(isblock.data.indirecttext.buffer,string);
+   }
+  }
+  else
+  {
+   xstrncpy(isblock.data.text,string,12);
+   err=wimp_delete_icon(window,icon);
+   iblock.w=window;
+   iblock.i=isblock;
+   if(!err) err=wimp_create_icon(&iblock,&icon);
+  }
+
+
+  if(!err)
+  {
+   if(cblock.i==icon && cblock.w==window)
+   {
+    len=strlen(string);
+    cblock.index=len;
+    err=wimp_set_caret_pos(&cblock);
+   }
+  }
+
+  /* posn caret and then refresh - cf save boxes when a short string */
+  /* changes to a long one */
+
+  if(!err) err=refreshicon(window,&isblock);
+ }
+
+ return(err);
+}
+
+
+
+os_error * writeiconc(int window,int icon,char * string)
+{
+ os_error * err;
+ char     * p;
+
+ err=iconaddr(window,icon,&p);
+ if(!err && strcmp(p,string)) err=writeicon(window,icon,string);
+
+ return(err);
+}
+
+
+
+
+os_error * writeiconf(int window,int icon,char * format,...)
+{
+ os_error * err;
+ va_list    args;
+ char       v[1024];
+
+ va_start(args, format);
+ vsprintf(v,format,args);
+ va_end(args);
+
+ trans(v,sizeof(v));
+
+ err=writeicon(window,icon,v);
+
+ return(err);
+}
+
+
+
+/* only write the icon if something different */
+
+os_error * writeiconfc(int window,int icon,char * format,...)
+{
+ os_error * err;
+ va_list    args;
+ char       v[1024];
+
+ va_start(args, format);
+ vsprintf(v,format,args);
+ va_end(args);
+
+ trans(v,sizeof(v));
+
+ err=writeiconc(window,icon,v);
+
+ return(err);
+}
+
+
+
+os_error * geticonint(int handle,int icon,int * val)
+{
+ os_error * err;
+ int        code;
+ char     * p;
+
+ err=iconaddr(handle,icon,&p);
+ if(!err)
+ {
+  code=sscanf(p,"%d",val);
+  if(code!=1) err=geterror(EINT);
+ }
+
+ return(err);
+}
+
+
+
+
+os_error *  setspritesicon(int window,int icon)
+{ 
+ wimp_icon       isblock;
+ wimp_icreate    iblock;
+
+ wimp_get_icon_info(window,icon,&isblock);
+ isblock.data.indirectsprite.spritearea=sprites;
+ wimp_delete_icon(window,icon);
+ iblock.w=window;
+ iblock.i=isblock;
+ return(wimp_create_icon(&iblock,&icon));
+}
+
+
+
+
+os_error * setspa(int window,int icon,int len,char * name)
+{ 
+ os_error      * err;
+ wimp_icon       isblock;
+ wimp_icreate    iblock;
+
+ err=wimp_get_icon_info(window,icon,&isblock);
+ if(!err)
+ {
+  isblock.data.indirectsprite.spritearea=sprites;
+  isblock.data.indirectsprite.name=name;
+  isblock.data.indirectsprite.nameisname=len;
+
+  isblock.flags|=wimp_INDIRECT;
+
+  err=wimp_delete_icon(window,icon);
+  if(!err)
+  {
+   iblock.w=window;
+   iblock.i=isblock;
+   err=wimp_create_icon(&iblock,&icon);
+  }
+ }
+ return(err);
+}
+
+
+
+
+os_error * setindirect(int window,int icon,int len,char * string)
+{ 
+ os_error      * err;
+ wimp_icon       isblock;
+ wimp_icreate    iblock;
+
+ err=wimp_get_icon_info(window,icon,&isblock);
+
+ isblock.data.indirecttext.buffer=string;
+/* isblock.data.indirecttext.validstring=NULL; */
+ isblock.data.indirecttext.bufflen=len;
+
+ isblock.flags|=wimp_INDIRECT;
+
+ if(!err)
+ {
+  err=wimp_delete_icon(window,icon);
+  if(!err)
+  {
+   iblock.w=window;
+   iblock.i=isblock;
+   err=wimp_create_icon(&iblock,&icon);
+  }
+ }
+
+ return(err);
+}
+
+
+
+
+os_error * writevalid(int window,int icon,char * string)
+{ 
+ os_error      * err;
+ wimp_icon       isblock;
+
+
+ err=wimp_get_icon_info(window,icon,&isblock);
+
+ if(!err)
+ {
+  strcpy(isblock.data.indirecttext.validstring,string);
+  err=wimp_set_icon_state((wimp_w)window,(wimp_i)icon,
+                           (wimp_iconflags)0,(wimp_iconflags)0);
+  /* refreshicon(window,&isblock); */
+ }
+ return(err);
+}
+
+
+
+os_error * radioon(int window,int icon)
+{
+ return(writeicon(window,icon,"radioon"));
+}
+
+
+os_error * radiooff(int window,int icon)
+{
+ return(writeicon(window,icon,"radiooff"));
+}
+
+
+os_error * radiost(int window,int icon,int state)
+{
+ if(state) return(radioon(window,icon));
+ else      return(radiooff(window,icon));
+}
+
+
+os_error * opton(int window,int icon)
+{
+ return(writeicon(window,icon,"opton"));
+}
+
+
+os_error * optoff(int window,int icon)
+{
+ return(writeicon(window,icon,"optoff"));
+}
+
+
+os_error * optst(int window,int icon,int state)
+{
+ if(state) return(opton(window,icon));
+ else      return(optoff(window,icon));
+}
+
+
+os_error * geto(int handle,windowstr * window)
+{
+ os_error       * err;
+ wimp_redrawstr   r;
+
+ r.w=handle;
+
+ err=wimp_getwindowoutline(&r);
+
+ window->x0=r.box.x0;
+ window->x1=r.box.x1;
+ window->y0=r.box.y0;
+ window->y1=r.box.y1;
+
+ return(err);
+}
+
+
+
+os_error * setmouse(int x,int y)
+{
+ char blk[5];
+
+ blk[0]=3;
+ blk[1]=x;blk[2]=x >> 8;
+ blk[3]=y;blk[4]=y >> 8;
+
+ return(os_word(21,blk));
+}
+
+
+
+os_error * refreshwindowtitle(int handle)
+{
+ wimp_redrawstr r;
+ windowstr      w1;
+ windowstr      w2;
+
+ getw(handle,&w1);
+ geto(handle,&w2);
+
+ r.w=-1;
+ r.box.x0=w1.x0;
+ r.box.x1=w2.x1;
+ r.box.y1=w2.y1;
+ r.box.y0=w1.y1;
+
+ return(wimp_force_redraw(&r));
+}
+
+
+/* complete repaint of window contents */
+
+os_error * refreshwindow(int handle)
+{
+ wimp_redrawstr r;
+ windowstr      w;
+
+ getw(handle,&w);
+
+ r.box.x0=w.x0-w.bx;
+ r.box.x1=w.x1-w.bx;
+ r.box.y0=w.y0-w.by;
+ r.box.y1=w.y1-w.by;
+ r.w=handle;
+
+ return(wimp_force_redraw(&r));
+}
+
+
+
+void centerwindow2(wimp_wstate * wst,int i)
+{
+ int width;
+ int height;
+ int left;
+ int top;
+
+ width=wst->o.box.x1-wst->o.box.x0;
+ height=wst->o.box.y1-wst->o.box.y0;
+
+ left=(cvdu.screenx-width)>>1;
+ top=(cvdu.screeny-height)>>1;
+
+ left+=hscrlbar*(i % 4);
+ top-=vscrlbar*(i % 5);
+
+ wst->o.box.x0=left;
+ wst->o.box.y0=top;
+ wst->o.box.x1=wst->o.box.x0+width;
+ wst->o.box.y1=wst->o.box.y0+height;
+}
+
+
+
+
+
+os_error * centerwindow(wimp_wstate * wst,int handle,int i)
+{
+ os_error * err;
+
+ err=wimp_get_wind_state(handle,wst);
+ if(!err)
+ {
+  centerwindow2(wst,i);
+  wst->o.behind=-1;
+ }
+
+ return(err);
+}
+
+
+
+os_error * popup(int handle,int i)
+{
+ os_error  * err;
+ wimp_wstate wst;
+
+ err=centerwindow(&wst,handle,i);
+ if(!err) err=wimp_open_wind(&wst.o);
+
+ return(err);
+}
+
+
+
+os_error * reopenw(int handle)
+{
+ os_error  * err;
+ wimp_wstate wst;
+
+ err=wimp_get_wind_state(handle,&wst);
+ if(!err) wimp_open_wind(&wst.o);
+
+ return(err);
+}
+
+
+
+os_error * openatscroll(int handle,int scx,int scy)
+{
+ os_error *  err;
+ wimp_wstate wblock;
+
+ err=wimp_get_wind_state(handle,&wblock);
+ if(!err)
+ {
+  wblock.o.x=scx;
+  wblock.o.y=scy;
+  err=wimp_open_wind(&wblock.o);
+ }
+
+ return(err);
+}
+
+
+
+static int closedefeat;
+
+
+void setclosedefeat(int state)
+{
+ closedefeat=state;
+}
+
+
+static void xzero(int userhandle) { USE(userhandle); }
+
+os_error * closedowncheck(int handle)
+{
+ wimp_mousestr mstr;
+ int           i;
+
+ if(closedefeat)
+ {
+  wimp_get_point_info(&mstr);
+  if(mstr.w==handle)
+  {
+   addzeroevent(xzero,0);
+
+   while(1)
+   {
+    wimp_get_point_info(&mstr);
+    if(mstr.w==handle)
+    {
+     poll();
+     if(!mstr.bbits)
+     {
+      for(i=0;i<10;i++) poll();
+      break;
+     }
+    }
+    else break;
+   }
+
+   remzeroevent(xzero,0);
+  }
+ }
+
+ return(NULL);
+}
+
+
+os_error * closedown(int * handlep)
+{
+ os_error    * err;
+ int           handle;
+
+ handle=*handlep;
+
+ if(handle)
+ {
+  err=wimp_close_wind(handle);
+  if(err)     wimp_delete_wind(handle);
+  else    err=wimp_delete_wind(handle);
+  *handlep=0;
+ }
+ else err=NULL;
+
+ return(err);
+}
+
+
+
+
+/* pops up menu style window */
+
+os_error * menuwindow(int handle)
+{
+ os_error * err;
+ wimp_wstate wst;
+
+ centerwindow(&wst,handle,0);
+ err=wimp_create_menu((wimp_menustr *)handle,wst.o.box.x0,wst.o.box.y1);
+/* repopf=0; */
+
+ return(err);
+}
+
+
+int taskhandle;
+int iconbaricon;
+
+os_error * starttask(void)
+{
+ os_error * err;
+ os_regset  r;
+
+ taskhandle=wimpt_task();
+
+ r.r[0]=0;
+ err=os_swix(OS_ReadSysInfo,&r);
+ if(!err)
+ {
+  if(r.r[0]==1) err=geterror(ETASK);
+ }
+
+ return(err);
+}
+
+
+static char iconsp[16];
+
+os_error * seticonbar(char * name)
+{
+ wimp_icreate wic;
+ wic.w=-1;
+ wic.i.box.x0=0;
+ wic.i.box.y0=0;
+ wic.i.box.x1=68;
+ wic.i.box.y1=68;
+ wic.i.flags=wimp_ISPRITE | wimp_IHCENTRE | wimp_IVCENTRE | 
+             (wimp_iconflags)0x3000       | wimp_INDIRECT;
+
+ wic.i.data.indirectsprite.name=iconsp;
+ wic.i.data.indirectsprite.spritearea=(void *)1;
+ wic.i.data.indirectsprite.nameisname=12;
+
+ strcpy(iconsp,name);
+
+ return(wimp_create_icon(&wic,&iconbaricon));
+}
+
+
+os_error * setnewiconbar(char * name)
+{
+ strcpy(iconsp,name);
+ return(wimp_set_icon_state((wimp_w)-1,(wimp_i)iconbaricon,
+                                    (wimp_iconflags)0,(wimp_iconflags)0));
+}
+
+
+
+os_error * findwindowtask(int handle,int icon,int * task)
+{
+ os_error *  err;
+ os_regset   rx;
+ wimp_msgstr msg;
+
+ rx.r[0]=19;
+ rx.r[1]=(int)&msg;
+ rx.r[2]=handle;
+ rx.r[3]=icon;
+
+ err=os_swix(Wimp_SendMessage,&rx);
+
+ *task=rx.r[2];
+
+ return(err);
+}
+
+
+
+
+int osversion(void)
+{
+ os_regset  rx;
+ static int osver=0;
+
+ if(!osver)
+ {
+  rx.r[0]=129;
+  rx.r[1]=0;
+  rx.r[2]=0xFF;
+
+  os_swix(OS_Byte,&rx);
+
+  osver=rx.r[1];
+ }
+
+ return(osver);
+}
+
+
+os_error * cmosread(int index,int * value)
+{
+ os_error  * err;
+ os_regset   rx;
+
+ rx.r[0]=161;
+ rx.r[1]=index;
+
+ err=os_swix(OS_Byte,&rx);
+
+ if(!err) *value=rx.r[2];
+
+ return(err);
+}
+
+
+
+/*
+
+
+int os3;
+int os35;
+
+
+void setosversions(void)
+{
+ int os;
+
+ os=osver();
+
+ os3=os>=0xA4;
+ os35=os>=0xA5;
+}
+
+*/
+
+
+
+
+

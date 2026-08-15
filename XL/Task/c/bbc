@@ -1,0 +1,224 @@
+/*->c.bbc */
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <signal.h>
+#include <ctype.h>
+#include <time.h>
+#include <stdarg.h>
+
+#include "h.os"
+#include "h.bbc"
+
+
+
+#define  XOS_Write0           0x00000002 | os_X
+#define  XOS_Plot             0x00000045 | os_X
+
+
+
+os_error *bbc_tint(int type, int value)
+{
+   os_error *e = bbc_vdu(bbc_MultiPurpose);
+   if (!e) e = bbc_vdu(17);
+   if (!e) e = bbc_vdu(type & 3);
+   if (!e) e = bbc_vdu((value << 6) & 0x0C0);
+   if (!e) e = bbc_vduw(0);
+   if (!e) e = bbc_vduw(0);
+   if (!e) e = bbc_vduw(0);
+   return(e);
+}
+
+
+
+
+/* Array of length of sequence for vdu codes. */ 
+static char Qlen[32] =
+{ 1,   /* VDU 0 */
+  2,   /* next character to printer only */
+  1,   /* printer on */
+  1,   /* printer off */
+  1,   /* print at text cursor */
+  1,   /* print at graphics cursor */
+  1,   /* enable VDU driver */
+  1,   /* beep */
+  1,   /* backspace */
+  1,   /* forward space (horizontal tab) */
+  1,   /* line feed */
+  1,   /* up a line */
+  1,   /* clear (text) screen */
+  1,   /* carriage return */
+  1,   /* page mode on */
+  1,   /* page mode off */
+  1,   /* clear graphics window */
+  2,   /* define text colour */
+  3,   /* define graphics colour */
+  6,   /* define logical colour */
+  1,   /* restore default palette */
+  1,   /* disable VDU drivers */
+  2,   /* Select screen mode */
+  10,  /* VDU 23,.. */
+  9,   /* set graphics window */
+  6,   /* PLOT ... */
+  1,   /* restore default windows */
+  1,   /* ESCAPE char - no effect */
+  5,   /* define text window */
+  5,   /* define graphics origin */
+  1,   /* home cursor */
+  3    /* tab cursor */
+/* and all the rest are 1 */
+};
+
+
+
+/* Multiple character VDU call. */
+os_error *bbc_vduq(int c,...)
+{
+   os_error *e;
+   va_list ap;
+   int n;
+   e = bbc_vdu(c);
+
+   if ((c >= ' ') || e) return(e);
+
+   va_start(ap, c);
+   n = Qlen[c];
+
+   while ((--n) && (!e)) e = bbc_vdu(va_arg(ap,int));
+
+   va_end(ap);
+   return(e);
+}
+
+
+ 
+os_error *bbc_stringprint(char *s)
+{
+  return(os_swi1(XOS_Write0, (int) s));
+}
+
+
+
+
+os_error *bbc_rectangle(int x, int y, int w, int h)
+{
+   os_error *e = bbc_move(x, y);
+   if (!e) e = bbc_plot(bbc_SolidExFinal + bbc_DrawRelFore,  0,  h);
+   if (!e) e = bbc_plot(bbc_SolidExFinal + bbc_DrawRelFore,  w,  0);
+   if (!e) e = bbc_plot(bbc_SolidExFinal + bbc_DrawRelFore,  0, -h);
+   if (!e) e = bbc_plot(bbc_SolidExFinal + bbc_DrawRelFore, -w,  0);
+   return(e);
+}
+
+
+/* Plot a solid rectangle. Left X, bottom Y, Width, Height. */
+os_error *bbc_rectanglefill(int x, int y, int w, int h)
+{
+   os_error *e = bbc_move(x, y);
+   if (!e) e = bbc_plot(bbc_RectangleFill + bbc_DrawRelFore, w, h);
+   return(e);
+}
+
+
+
+
+/* Set up graphics window. */
+os_error *bbc_gwindow(int a, int b, int c, int d)
+{
+   os_error *e = bbc_vdu(bbc_DefGraphWindow);
+   if (!e) e = bbc_vduw(a);
+   if (!e) e = bbc_vduw(b);
+   if (!e) e = bbc_vduw(c);
+   if (!e) e = bbc_vduw(d);
+   return(e);
+}
+
+
+
+os_error *bbc_origin(int x,int y)
+{
+ os_error *e = bbc_vdu(bbc_DefGraphOrigin);
+ if (!e) e = bbc_vduw(x);
+ if (!e) e = bbc_vduw(y);
+ return(e);
+}
+
+
+
+int bbc_modevar(int mode, int varno)
+{
+ int result;
+
+ (void) os_swi3r(os_X | 0x35, mode, varno, 0, 0, 0, &result);
+
+ return result;
+}
+
+
+os_error * bbc_modevarx(int mode,int varno,int * result)
+{
+ return(os_swi3r(os_X | 0x35,mode,varno,0,0,0,result));
+}
+
+
+int bbc_vduvar(int varno)
+{
+   int vars[2];
+   int result;
+   vars[0] = varno;
+   vars[1] = -1; /* terminator. */
+   (void) os_swi2(os_X | 0x31, (int) &vars[0], (int) &result);
+   return result;
+}
+
+
+
+
+
+
+
+
+
+
+
+/* Set graphics foreground/background colour and action. */
+os_error *bbc_gcol(int a, int b)
+{
+   os_error *e = bbc_vdu(bbc_DefGraphColour);
+   if (!e) e = bbc_vdu(a);
+   if (!e) e = bbc_vdu(b);
+   return(e);
+}
+
+
+/* Perform an operating system plot operation. Plot number, x, y. */
+os_error *bbc_plot(int n, int x, int y)
+{
+   return(os_swi3(XOS_Plot, n, x, y));
+}
+
+
+/* Move graphics cursor to an absolute position. */
+os_error *bbc_move(int x, int y)
+{ 
+   return(bbc_plot(bbc_SolidBoth + bbc_BMoveAbs, x, y));
+}
+
+
+
+/* Draw a line to absolute coordinates from the current graphics position. */
+os_error *bbc_draw(int x, int y)
+{
+   return(bbc_plot(bbc_SolidBoth + bbc_DrawAbsFore, x, y));
+}
+
+/* Read buffer status */
+
+int bbc_adval(int x)
+{
+ int dmy;
+ os_byte(0x80,&x,&dmy);
+ return(x+(dmy<<8));
+}
+

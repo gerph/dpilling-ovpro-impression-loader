@@ -1,0 +1,14 @@
+/*->h.wimptext */
+
+extern int wimpavfontwidth;
+
+extern void wimpfontstart(int avwidth);
+extern void wimpfontend(void);
+extern void stringat(int x,int y,char * string,int col,int height);
+extern void plinthtext(int x,int y,int w,int h,char * string,int col);
+extern void noplinthtext(int x,int y,int w,int h,char * string,int col);
+extern int  wimpfontstringwidth(char * string);
+
+extern os_error * tickat(int x,int y,int col);
+
+

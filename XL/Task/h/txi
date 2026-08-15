@@ -1,0 +1,18 @@
+/*->h.txi */
+
+
+typedef os_error * (*txifn)(mousestr * mouse,int handle,int icon,int * claim);
+
+
+extern  os_error * txicondrag(wimp_mousestr * m,txifn xtxif,int * claim);
+
+
+
+
+
+
+
+
+
+
+

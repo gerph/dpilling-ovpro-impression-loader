@@ -1,0 +1,480 @@
+/*->c.applet */
+
+
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <stdio.h>
+
+
+#include "h.os"
+#include "h.wimp"
+#include "h.wimpt"
+#include "h.werr"
+#include "h.swis"
+
+
+#include "h.flex"
+
+#include "h.err"
+#include "h.trans"
+#include "h.temp"
+#include "h.sp"
+#include "h.wos"
+#include "h.poll"
+#include "h.alloc"
+#include "h.bits"
+#include "h.etc"
+#include "h.fsx"
+#include "h.scall"
+
+#include "h.xext"
+
+
+#include "h.task"
+#include "h.applet"
+
+
+
+       char * appspath;
+static char * appchunk;
+static int    appsize;
+
+
+
+
+typedef struct apphdrstr
+{
+ int    chunksize;
+ char * path;
+
+/* char  name[12];
+ int   arun:1;
+ int   alen:1;
+ int   run:1;
+ int   ressprite:1;
+ int   restemp:1;
+ int   object:2;
+ int   autorun:1;
+ int   library:1; */
+
+} apphdrstr;
+
+
+
+typedef struct aifheader
+{
+ apphdrstr hdr;
+ int       bldecompress;
+ int       blselfreloc;
+ int       blzeroinit;
+ int       blentry;
+ int       swiexit;
+ int       readonlysize;
+ int       readwritesize;
+ int       debugsize;
+ int       zeroinitsize;
+ int       debugtype;
+ int       imagebase;
+ int       relocworkspace;
+
+ int       reserved[4];
+ int       zerocode[16];
+} aifheader;
+
+
+typedef struct linkline
+{
+ int address;
+} linkline;
+
+
+
+extern linkline link_table[];
+
+
+
+
+#define LINKBIT     (1<<24)
+#define BRANCHMASK  ((1<<27)|(1<<26)|(1<<25))
+#define BRANCH      ((1<<27)|(1<<25))
+
+
+
+static void callbranch(int * value,char * arg1)
+{
+ if(((*value) & BRANCHMASK)==BRANCH)
+ {
+  scallset(value);
+  scall((int)arg1,0,0,0);
+ }
+}
+
+
+
+static void codesync(int * lo,int * hi)
+{
+ os_regset rx;
+
+ rx.r[0]=1;
+ rx.r[1]=(int)lo;
+ rx.r[2]=(int)hi;
+
+ os_swix(OS_SynchroniseCodeAreas,&rx);
+}
+
+
+
+
+#define OFFSETMASK   0xFFFFFF
+#define ADDRESSMASK 0x3FFFFFF
+
+
+
+os_error * appletinit(char * xapps)
+{
+ os_error   * err;
+ fxstat       f;
+ int          eof;
+ int          size;
+ aifheader  * aif;
+ int          offset;
+ int        * address;
+ int          fn;
+ int          runsize;
+ int          len;
+ int        * lowaddress;
+ char         string[256];
+ char         path[1024];
+ char       * p;
+ char       * q;
+ int          type;
+
+
+ err=NULL;
+
+
+ p=getenv(xapps);
+ if(p)
+ {
+  strcpy(path,p);
+
+  q=string;
+  p=strtok(path," ,");
+  while(p)
+  {
+   len=strlen(p);
+   if(*(p+len-1)=='.') *(p+len-1)=0;
+
+   fs_exists(p,&type);
+   if(type>1)
+   {
+    strcpy(q,p);
+    q+=strlen(q)+1;
+   }
+   p=strtok(NULL," ,");
+  }
+  *q++=0;
+
+
+  err=flex_alloc((flex_ptr)&appspath,q-string);
+  if(!err)
+  {
+   memcpy(appspath,string,q-string);
+
+   p=appspath;
+   while(*p)
+   {
+    sprintf(string,"Set %s$AppletsDir %s",wimpt_programname(),p);
+    os_cli(string);
+
+    fs_startscan();
+
+    while(1)
+    {
+     err=fs_nextitem(p,&f,NULL,&eof);
+     if(err) break;
+     if(eof) break;
+
+     if(f.f.object>1)
+     {
+      len=strlen(f.name);
+      if(len && f.name[len-1]!='-')
+      {
+       sprintf(string,"%s.%s.!Install",p,f.name);
+ 
+       fs_stat(string,&f.f);
+       if(f.f.object)
+       {
+        sprintf(string,"WimpTask Run %s.%s.!Install",p,f.name);
+        os_cli(string);
+       }
+
+       sprintf(string,"%s.%s.Image",p,f.name);
+       fs_stat(string,&f.f);
+       if(f.f.object)
+       {                       /* load Image chunk */
+
+        size=appsize+f.f.length+sizeof(apphdrstr); /* header */
+
+        if(!appchunk) err=flex_alloc((flex_ptr)&appchunk,size);
+        else          err=flex_extend((flex_ptr)&appchunk,size);
+
+        dprintf(0,"appletaddress %x",appchunk+appsize+sizeof(apphdrstr));
+
+        if(!err) err=fs_loadblock(string,appchunk+appsize+sizeof(apphdrstr));
+
+        if(!err)
+        {
+         aif=(aifheader*)(appchunk+appsize);
+
+//         dprintf(0,"bits %d",aif->reserved[0] & 0xFF);
+         if((aif->reserved[0] & 0xFF)!=32)
+          err=generror(0,"A 26 bit applet is present and can't be loaded - %s",
+                        f.name);
+
+         if(!err)
+         {
+          aif->hdr.chunksize=sizeof(aifheader)+aif->readonlysize+
+                                          aif->readwritesize+aif->zeroinitsize;
+          aif->hdr.path=p;
+
+          runsize=appsize+aif->hdr.chunksize;
+
+          if(runsize>size)
+          {
+           err=flex_extend((flex_ptr)&appchunk,runsize);
+          }
+         }
+
+         if(!err)
+         {
+          aif=(aifheader*)(appchunk+appsize);
+
+          codesync((int*)(appchunk+appsize),(int*)(appchunk+appsize+f.f.length));
+
+          dprintf(0,"aif %x",aif);
+
+          callbranch(&aif->blselfreloc,NULL);
+
+   dprintf(0,"post reloc");
+
+          callbranch(&aif->blzeroinit,NULL);
+
+    dprintf(9,"reloc=%x %x",aif->blselfreloc,aif->blzeroinit);
+
+          offset=aif->blentry & OFFSETMASK;
+          offset*=4;
+          offset+=8;
+    
+          address=(int*)((((int)&aif->blentry)+offset) & ADDRESSMASK);
+     
+          lowaddress=address=(int*)address[1];   /* address of reloc table */
+
+
+       dprintf(9,"linktable=%x",link_table);
+
+          while(1)
+          {
+           fn=*address;
+           if(fn<0) break;
+
+           offset=link_table[fn].address-(int)address;
+           offset-=8;
+           offset/=4;
+
+           offset&=OFFSETMASK;
+
+  dprintf(10,"fn=%d linktable=%x offset=%x",fn,link_table[fn].address,
+                                                            offset); 
+
+           fn=0xEA000000+offset;
+
+           *address++=fn;
+          }
+
+dprintf(0,"code sync");
+
+          codesync(lowaddress,address);
+
+          if(size>runsize)
+          {
+           err=flex_extend((flex_ptr)&appchunk,runsize);
+          }
+
+          appsize=runsize;
+         }
+        }
+       }
+      }
+     }
+     if(err) break;
+    }
+    p+=strlen(p)+1;
+    if(err) break;
+   }
+  }
+ }
+
+
+dprintf(0,"appinit ex");
+// if(err) dprintf(6,"errmess %s",err->errmess);
+
+ return(err);
+}
+
+
+/* called at end of task initialisation */
+
+os_error * appletboot(void)
+{
+ os_error   * err;
+ aifheader  * aif;
+ int          offset;
+
+ err=NULL;
+
+ if(appspath)
+ {
+  offset=0;
+
+  while(offset<appsize)
+  {
+   aif=(aifheader*)(appchunk+offset);
+   callbranch(&aif->blentry,aif->hdr.path);
+   offset+=aif->hdr.chunksize;
+  }
+ }
+
+ return(err);
+}
+
+
+
+
+
+os_error * inittaska(char * name,char * textname,char * spritename,
+                     char * resources,char * apps,taskinitfn initfn)
+{                   
+ os_error * err;
+
+#ifdef NEVER
+ char       temp[64];
+ char     * p;
+#endif
+
+
+ 
+
+ wimpversion=wimpt_init2(name,textname,spritename);      /* boots task */
+ vdumodevars();
+
+          err=starttask();        /* does checks and retrieves task handle */
+
+dprintf(0,"start task");
+
+ if(!err) err=flex_init();
+
+dprintf(0,"init flex");
+
+ if(!err) err=appletinit(apps);
+
+dprintf(0,"init applet");
+
+ if(!err) err=initerror();
+
+dprintf(0,"init error");
+
+ if(!err) err=inittemp();
+
+dprintf(0,"init temp");
+
+ if(!err) err=initsprites();
+
+dprintf(0,"init sprites");
+
+ if(!err) err=inittrans();
+
+dprintf(0,"init tras");
+
+ if(!err && initfn) err=initfn(0);
+
+
+dprintf(0,"init function");
+
+ if(!err) err=initalloc();
+
+
+dprintf(0,"init error");
+
+ if(!err) err=pollinit();
+
+
+dprintf(0,"init poll");
+
+ if(!err) err=appletboot();
+
+
+dprintf(0,"applet boot");
+
+ if(!err) err=taskerrors();
+
+dprintf(0,"task error");
+
+ if(!err) err=addspritesx(resources,"Sprites");
+
+dprintf(0,"add sprites");
+
+
+ if(!err)
+ {
+  if(ospresent(RISCOS310)<0) err=addspritesx(resources,"Sprites2");
+ }
+
+dprintf(0,"add sprites x");
+
+ if(!err) err=event(EVENT_LOADSPRITES,NULL,0);
+ if(!err) err=appletsprites();
+
+
+dprintf(0,"applet sprites");
+
+ if(!err) err=event(EVENT_SUBRESOURCES,NULL,0);
+
+dprintf(0,"sub resources");
+
+ if(!err) err=addtranstable(resources,"Messages");
+
+ if(!err) err=event(EVENT_LOADMESSAGES,NULL,0);
+
+dprintf(0,"load messages");
+
+ if(!err) err=appletmessages();
+
+dprintf(0,"applet messages");
+
+
+#ifdef NEVER
+ if(!err) 
+ {
+  sprintf(temp,"%s$Templates",name);
+
+
+  if((p=getenv(temp))!=NULL) 
+  {
+   strcpy(temp,p);
+   p=temp;
+  }
+  else p="Templates";
+
+  err=addtemplates(resources,p,temptable,&templatelink);
+ }
+#endif
+
+ return(err);
+}
+
+
+
+
+

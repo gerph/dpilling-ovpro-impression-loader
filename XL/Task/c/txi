@@ -1,0 +1,239 @@
+/*->c.txi */
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <signal.h>
+#include <ctype.h>
+#include <time.h>
+#include <stdarg.h> 
+
+#include "h.os"
+#include "h.wimp"
+#include "h.bbc"
+
+
+#include "h.etc"
+#include "h.drag"
+
+#include "h.wos"
+#include "h.poll"
+#include "h.save"
+
+#include "h.txi"
+
+
+
+#define TEXT 0xFFF
+
+
+
+#ifdef NEVER
+
+
+int loadtexticon(char * name,int type,int mhandle,int micon)
+{
+ wimp_icon   istate;
+ int         buttonbits;
+ FILE      * fp;
+ char        buffer[256];
+ int         i;
+ int         c;
+
+ if(type==TEXT)
+ {
+  wimp_get_icon_info(mhandle,micon,&istate);
+
+  if(istate.flags & wimp_ITEXT)
+  {
+   buttonbits=(istate.flags/wimp_IBTYPE)&0xF;
+   if(buttonbits==wimp_BWRITABLE || buttonbits==wimp_BWRITECLICKDRAG)
+   {
+    fp=ropen(name,"rb");
+    if(fp)
+    {
+     i=0;
+     while(!rameof(fp))
+     {
+      c=rgetc(fp);
+      if(c>=32) buffer[i++]=c;
+     }
+     rclose(fp);
+
+     if(istate.flags & wimp_INDIRECT)
+     {
+      if(i>(istate.data.indirecttext.bufflen-1)) 
+                                i=istate.data.indirecttext.bufflen-1;
+     }
+     else
+     {
+      if(i>=11) i=11;
+     }
+
+     buffer[i]=0;
+
+     writeicon(mhandle,micon,buffer);
+    }
+   }
+  }
+ }
+
+ return(0);  /* could not load it */
+}
+
+
+
+int canloadtexticon(int type,int mhandle,int micon)
+{
+ wimp_icon istate;
+ int       buttonbits;
+
+ if(type==TEXT)
+ {
+  wimp_get_icon_info(mhandle,micon,&istate);
+
+  if(istate.flags & wimp_ITEXT)
+  {
+   buttonbits=(istate.flags/wimp_IBTYPE)&0xF;
+
+   if(buttonbits==wimp_BWRITABLE || buttonbits==wimp_BWRITECLICKDRAG)
+   {
+    return(1);
+   }
+  }
+ }
+
+ return(0);  /* could not load it */
+}
+
+
+#endif
+
+
+
+
+
+
+/***************************************************************************/
+
+/* return non-zero to claim */
+
+static int   txicon;
+static int   txhandle;
+static int   txistate;
+static txifn txif;
+
+
+
+static os_error * txisave(char * name,int type)
+{
+
+/*
+ FILE * fp;
+ char * p;
+
+ fp=ropen(name,"wb");
+ if(fp)
+ {
+  p=iconaddr(txhandle,txicon);
+  rwrite(p,strlen(p),1,fp);
+  rclose(fp);
+ }
+
+ return(1);
+*/
+
+ return(NULL);
+}
+
+
+
+
+
+/* return non-zero to claim */
+
+static os_error * txicondragend(int handle,int userhandle,wimp_box * box)
+{
+ os_error * err;
+ wimp_icon  istate;
+ int        buttonbits;
+ int        task;
+ mousestr   mouse;
+ char     * p;
+
+ err=NULL;
+
+
+ if(txistate)
+ {
+  getpointer(&mouse);
+
+  findwindowtask(mouse.handle,mouse.icon,&task);
+  if(task==taskhandle)
+  {
+   /* internal */
+   wimp_get_icon_info(mouse.handle,mouse.icon,&istate);
+
+   if(istate.flags & wimp_ITEXT)
+   {
+    buttonbits=(istate.flags/wimp_IBTYPE)&0xF;
+    if(buttonbits==wimp_BWRITABLE || buttonbits==wimp_BWRITECLICKDRAG)
+    {
+     iconaddr(txhandle,txicon,&p);
+     writeicon(mouse.handle,mouse.icon,p);
+    }
+   }
+  }
+  else
+  {
+   setsave0(TEXT,txisave);
+   setsave2(NULL,NULL);
+   sendsave(TEXT,"text",&mouse);
+  }
+
+  txistate=0;
+ }
+
+ return(err);
+}
+
+
+
+
+
+
+
+os_error * txicondrag(wimp_mousestr * m,txifn xtxif,int * claim)
+{
+ os_error * err;
+ wimp_icon  istate;
+ int        buttonbits;
+
+ err=NULL;
+
+ txif=xtxif;
+
+ if(m->i>=0 && m->bbits==0x40)
+ {
+  wimp_get_icon_info(m->w,m->i,&istate);
+
+  if(istate.flags & wimp_ITEXT)
+  {
+   buttonbits=(istate.flags/wimp_IBTYPE)&0xF;
+
+   if(buttonbits==wimp_BWRITECLICKDRAG)
+   {
+    dragicon(m->x,m->y,m->w,m->i);
+    startdrag(m->w,0,txicondragend);
+    txicon=m->i;
+    txhandle=m->w;
+    txistate=1;
+   }
+  }
+ }
+
+ return(err);
+}
+
+
+

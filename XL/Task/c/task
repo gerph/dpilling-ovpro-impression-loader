@@ -1,0 +1,219 @@
+/*->c.task */
+
+
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <stdio.h>
+
+
+#include "h.os"
+#include "h.wimp"
+#include "h.wimpt"
+#include "h.werr"
+
+#include "h.flex"
+
+#include "h.err"
+#include "h.trans"
+#include "h.temp"
+#include "h.sp"
+#include "h.wos"
+#include "h.poll"
+#include "h.alloc"
+#include "h.bits"
+#include "h.fsx"
+#include "h.xhelp"
+#include "h.timex"
+
+
+#include "h.task"
+
+
+
+
+
+static errtag errortable[25]=
+{
+ ETASK ,"Not enough memory, or not within *desktop world.",
+ EMEM  ,"{EME}",
+ ERD   ,"{ERD}",
+ EWR   ,"{EWR}",
+ EMEMF ,"Memory is corrupt!",
+ EINT  ,"{EINT}",
+ ETEMP ,"{ETEMP}",
+ ENOTF ,"{ENOTF}",
+ ESVDG ,"{ESVDG}",
+ ENOWS ,"{ENOWS}",
+ EUXDS ,"{EUXDS}",
+ EUXRF ,"{EUXRF}",
+ EMEMAF,"{EMEMAF}",
+ EMEMBF,"{EMEMBF}",
+ EMEMAD,"{EMEMAD}",
+ EMEMFE,"{EMEMFE}",
+ EMEMCH,"{EMEMCH}",
+ EMEMBAD,"{EMEMBAD}",
+ ENOTOKVAL,"{ENOTOKVAL}",
+ ENOEVENT,"{ENOEVENT}",
+ ETEMPX,"{ETEMPX}",
+ ETEMPF,"{ETEMPF}",
+ EREPORTED,"{EREP}",
+ ELAST ,""
+};
+
+
+static errlink errorlink;
+
+
+os_error * taskerrors(void)
+{
+ return(adderrortable(errortable,&errorlink));
+}
+
+
+
+#ifdef NEVER
+
+static templates temptable[4]=
+{
+ TCONF,0,0,"Confirm",
+ TSAVE,0,0,"Savefile",
+ TINFO,1,0,"Info",
+ TLAST,0,0,""
+};
+
+static templink templatelink;
+
+#endif
+
+
+
+int wimpversion;  
+
+
+
+
+os_error * finittask(void)
+{
+ finittemp();
+ return(flex_finit());
+}
+
+
+
+
+
+int resexists(char * path,char * leaf)
+{
+ os_error  *   err;
+ char          name[256];
+ fstat         f;
+
+ strcpy(name,path);
+ strcat(name,".");
+ strcat(name,leaf);
+
+ err=fs_stat(name,&f);
+ return(!err && f.object);
+}
+
+
+
+os_error * inittask(char * name,char * textname,char * spritename,
+                    char * resources,char * apps,taskinitfn initfn)
+{
+ os_error * err;
+
+#ifdef NEVER
+ char       temp[64];
+ char     * p;
+#endif
+
+
+ wimpversion=wimpt_init2(name,textname,spritename);      /* boots task */
+ vdumodevars();
+
+          err=starttask();        /* does checks and retrieves task handle */
+
+/* dprintf(0,"T1"); */
+
+ if(!err) err=flex_init();
+ if(!err) err=initerror();
+
+/* dprintf(0,"T2"); */
+
+ if(!err) err=inittemp();
+
+/* dprintf(0,"T2a"); */
+
+ if(!err) err=initsprites();
+
+/* dprintf(0,"T3"); */
+
+ if(!err) err=inittrans();
+ if(!err && initfn) err=initfn(0);
+
+/* dprintf(0,"T4"); */
+
+ if(!err) err=initalloc();
+ if(!err) err=pollinit();
+ timexinitsys(NULL,NULL);
+
+
+/* dprintf(0,"T5"); */
+
+
+ if(!err) err=taskerrors();
+
+/* dprintf(0,"T5a"); */
+
+ if(!err) err=addspritesx(resources,"Sprites");
+
+/* dprintf(0,"T5b"); */
+
+ if(!err)
+ {
+  if(ospresent(RISCOS310)<0) err=addspritesx(resources,"Sprites2");
+ }
+
+/* dprintf(0,"T5c"); */
+
+ if(!err) err=event(EVENT_LOADSPRITES,NULL,0);
+
+/* dprintf(0,"T5d"); */
+
+ if(!err) err=event(EVENT_SUBRESOURCES,NULL,0);
+
+/* dprintf(0,"T6"); */
+
+ if(!err) err=addtranstable(resources,"Messages");
+ if(!err) err=event(EVENT_LOADMESSAGES,NULL,0);
+
+
+#ifdef NEVER
+ if(!err) 
+ {
+  sprintf(temp,"%s$Templates",name);
+
+
+  if((p=getenv(temp))!=NULL) 
+  {
+   strcpy(temp,p);
+   p=temp;
+  }
+  else p="Templates";
+
+  err=addtemplates(resources,p,temptable,&templatelink);
+ }
+#endif
+
+ return(err);
+}
+
+
+void runtask(void)
+{
+ while(1) poll();
+}
+
+

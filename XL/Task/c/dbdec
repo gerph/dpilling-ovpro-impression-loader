@@ -1,0 +1,199 @@
+/*->c.dbdec */
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+#include <stdarg.h>
+
+
+#include "h.swis"
+#include "h.kernel"
+#include "h.bbc"
+#include "h.os"
+#include "h.wimp"
+#include "h.wimpt"
+
+#include "h.wos"
+#include "h.mym"
+
+#include "h.poll"
+#include "h.temp"
+#include "h.trans"
+#include "h.etc"
+
+
+
+
+
+#include "h.dbdec"
+
+
+
+
+static int          dec_ok;
+static deciconstr * decicons;
+
+
+/*
+
+  use icon of -1 to  terminate list 
+  use icon of -2 for key press only items
+  use key  of  0 for no extra key
+
+*/
+
+
+
+
+static os_error * decicon(int handle,int userhandle,wimp_mousestr * m)
+{
+ int i;
+
+ i=0;
+ while(1)
+ {
+  if(decicons[i].icon==-1) break;
+  else
+  if(decicons[i].icon==m->i)
+  {
+   dec_ok=decicons[i].value;
+   break;
+  }
+  i++;
+ }
+
+ return(NULL);
+
+ USE(handle);
+ USE(userhandle);
+}
+
+
+static os_error * deckey(int handle,int userhandle,int icon,int * key)
+{
+ int    ch;
+ int    i;
+ char * p;
+
+ ch=toupper(*key);
+
+ i=0;
+ while(1)
+ {
+  if(decicons[i].icon==-1) break;
+  else
+  if(decicons[i].key==ch && ch)
+  {
+   dec_ok=decicons[i].value;
+   break;
+  }
+  else
+  if(decicons[i].icon>=0)
+  {
+   iconaddr(handle,decicons[i].icon,&p);
+   if(ch==toupper(*p))
+   {
+    dec_ok=decicons[i].value;
+    break;
+   }
+  }
+
+  i++;
+ }
+
+ if(dec_ok!=-2) *key=-1;
+
+ return(NULL);
+
+ USE(userhandle);
+ USE(icon);
+}
+
+
+static void czero(int userhandle)
+{
+ USE(userhandle);
+}
+
+
+/* returns 1==SUB 0==Reflow -1==FORGET IT */
+
+os_error * decbox(decstr * dec,int * result,char * format,...)
+{
+ va_list       args;
+ char          string[256];
+ char          temp[256];
+ int           handle;
+ os_error  *   err;
+ windowstr     window;
+ wimp_caretstr cblock;
+ static int    active;
+
+ decicons=dec->icon;
+
+ strcpy(temp,format);
+ err=trans(temp,sizeof(temp));
+
+ va_start(args,format);
+ vsprintf(string,temp,args);
+ va_end(args);
+
+ err=trans(string,sizeof(string));
+
+ *result=-1;
+
+ if(!active)
+ {
+  active=1;
+
+  if(!err) err=createwindow(dec->template,&handle);
+
+  if(!err)
+  {
+   setindirect(handle,dec->messageicon,sizeof(string),string);
+
+   dec_ok=-2;
+
+   addkeyevent(deckey,handle,0);
+   addclickevent(decicon,handle,0);
+   addzeroevent(czero,0);
+
+   err=menuwindow(handle);
+   if(!err)
+   {
+    err=wimp_get_caret_pos(&cblock);
+    setfocus(handle);
+
+    while(dec_ok==-2)
+    {
+     getw(handle,&window);
+     if(!(window.wflags & 0x10000))
+     {
+      dec_ok=-1;
+      break;
+     }
+     poll();
+    }
+
+    closedowncheck(handle);
+
+    if(window.wflags & 0x10000) zapmenu();
+    err=wimp_set_caret_pos(&cblock);
+   }
+
+   remkeyevent(deckey,handle,0);
+   remclickevent(decicon,handle,0);
+   remzeroevent(czero,0);
+
+   closedown(&handle);
+  }
+
+  *result=dec_ok;
+  active=0;
+ }
+
+ return(err);
+}
+

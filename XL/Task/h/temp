@@ -1,0 +1,46 @@
+/*->h.temp */
+
+
+#define TLAST 0
+#define TCONF 1
+#define TSAVE 2
+#define TINFO 3
+
+
+typedef struct templates
+{
+ int     tempno;
+ int     spritearea;
+
+ struct
+ {
+  int     offset;
+  char *  tempname;
+ } id;
+
+} templates;
+
+
+typedef struct templink
+{
+ struct templink  * next;
+ templates        * temps;
+} templink;
+
+
+
+extern os_error * addtemplates(char * path,char * leaf,templates * temptable,
+                                                              templink * link);
+
+extern os_error * findtemp(int tempno,wimp_wind ** ww);
+extern os_error * findtempname(int * tempno,char * name);
+
+extern os_error * createwindowtitle(int tempno,char * title,int * handle);
+extern os_error * createwindow(int tempno,int * handle);
+extern os_error * createwindowheight(int tempno,int * handle,int h);
+extern void       tempmode(void);
+extern os_error * tempremapwindow(int handle);
+
+extern os_error * inittemp(void);
+extern os_error * finittemp(void);
+

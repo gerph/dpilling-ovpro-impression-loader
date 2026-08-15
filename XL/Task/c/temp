@@ -1,0 +1,914 @@
+/*->c.temp */
+
+
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <stdio.h>
+
+
+#include "h.os"
+#include "h.wimp"
+#include "h.flex"
+
+
+#include "h.err"
+#include "h.sp"
+#include "h.font"
+
+#include "h.bits"
+#include "h.etc"
+#include "h.encrypt"
+
+#include "h.fsx"
+
+#include "h.wos"
+#include "h.temp"
+
+
+#define WORKCHUNK 0x4000
+#define WINDCHUNK 0x4000
+
+
+static templink * firstlink;
+
+static int    windsize;
+static char * windspace;
+
+static wimp_font_array fontarray;
+
+static char tfmap[256];
+static int  tfremap;         /* true if mapping needed */
+
+
+
+/* merge in a new template file */
+
+//#define OLDTEMPS
+
+
+#ifdef OLDTEMPS
+
+
+static int    worksize;
+static char * workspace;
+
+
+os_error * addtemplates(char * path,char * leaf,templates * temptable,
+                                                            templink * link)
+{
+ os_error  *   err;
+ char          name[256];
+ int           i;
+ wimp_wind *   ww;
+ char          nbuff[16];
+ int           maxworksize;
+ wimp_template wtmp;
+
+ link->temps=temptable;
+
+ link->next=firstlink;
+ firstlink=link;
+
+ strcpy(name,path);
+ strcat(name,".");
+ strcat(name,leaf);
+
+
+ err=wimp_open_template(name);
+ if(!err)
+ {
+  for(i=0;temptable[i].tempno!=TLAST;i++)
+  {
+
+/*  dprintf(0,"worksize=%d windsize=%d i=%d",worksize,windsize,i); 
+  dprintf(1,"name=%s",temptable[i].id.tempname);  */
+
+   err=flex_chunk((flex_ptr)&workspace,worksize+WORKCHUNK/2,WORKCHUNK);
+   if(err) break;
+   err=flex_chunk((flex_ptr)&windspace,windsize+WINDCHUNK/2,WINDCHUNK);
+   if(err) break;
+   err=flex_size((flex_ptr)&workspace,&maxworksize);
+   if(err) break;
+
+   strcpy(nbuff,temptable[i].id.tempname);
+   ww=(wimp_wind *)(windspace+windsize);
+
+   wtmp.buf=ww;
+   wtmp.work_free=workspace+worksize;
+   wtmp.work_end=workspace+maxworksize;
+   wtmp.font=&fontarray;
+   wtmp.name=nbuff;
+   wtmp.index=0;
+
+   err=wimp_load_template(&wtmp); 
+   if(err) break;
+   if(!wtmp.index)
+   {
+    err=geterrorf(ETEMP,temptable[i].id.tempname);
+    break;
+   }
+
+   worksize=wtmp.work_free-workspace;
+
+   temptable[i].id.offset=windsize;
+   windsize+=sizeof(wimp_wind)+(ww->nicons)*sizeof(wimp_icon);
+
+
+ /*  if(temptable[i].spritearea) ww->spritearea=sprites;
+   else  */                      ww->spritearea=(char *)1; 
+                                         /* use common sprites for these */
+  }
+  if(err)     wimp_close_template();
+  else    err=wimp_close_template();
+ }
+
+ if(!err) err=flex_extend((flex_ptr)&workspace,worksize);
+ if(!err) err=flex_extend((flex_ptr)&windspace,windsize);
+
+/* dprintf(2,"work=%d wind=%d",worksize,windsize);  */
+
+ return(err); 
+}
+
+#else
+
+
+
+
+static os_error * tempfont(wimp_iconflags * data,char * fbase)
+{
+ os_error * err;
+ int        i;
+ int        xsize;
+ int        ysize;
+ int        flags;
+ int        fh;
+
+ err=NULL;
+
+ flags=*data;
+
+ i=(flags>>24)&0xFF;
+
+/* dprintf(0,"i=%d map=%d",i,tfmap[i]); */
+
+ if(!tfmap[i])
+ {
+  fbase+=(i-1)*48;
+
+  memcpy(&xsize,fbase,4);
+  memcpy(&ysize,fbase+4,4);
+  err=font_find(fbase+8,xsize,ysize,0,0,&fh);
+
+/* dprintf(2,"map font %d %d %s",xsize,ysize,fbase+8);  */
+
+  if(!err)
+  {
+   fontarray.f[fh]++;
+   tfmap[i]=fh;
+  }
+ }
+
+ if(!err) *data=(wimp_iconflags)((flags & 0xFFFFFF)|tfmap[i]<<24);
+
+ return(err);
+}
+
+
+static int * findoffset(int offset,char * base)
+{
+ int * q;
+ int * p;
+ int   min;
+ int   temp;
+
+ min=0;
+
+ p=NULL;
+
+ q=(int*)base;
+ while(*q)
+ {
+  temp=((*q)-offset);
+
+  if(!temp) return(q);
+
+  if(temp>0)
+  {
+   if(!min || temp<min)
+   {
+    min=temp;
+    p=q;
+   }
+  }
+  q+=6;
+ }
+
+ return(p);
+}
+
+
+static os_error * relocicon(wimp_iconflags * flagsp,wimp_icondata * data,
+                                       char ** wp,char * r,int foffset)
+{
+ os_error * err;
+ int        flags;
+ char     * w;
+
+ err=NULL;
+ w=*wp;
+ flags=*flagsp;
+
+ if(flags & wimp_INDIRECT)
+ {
+  if(flags & wimp_ITEXT)
+  {
+
+dprintf(0,"ind len %d",data->indirecttext.bufflen);
+   if(((int)data->indirecttext.buffer)>0 && data->indirecttext.bufflen>0)
+   {
+    xstrncpy(w,r+(int)data->indirecttext.buffer,data->indirecttext.bufflen);
+    data->indirecttext.buffer=w;
+
+    w+=data->indirecttext.bufflen;
+   }
+   else
+   {
+    data->indirecttext.bufflen=0;
+    data->indirecttext.buffer=NULL;
+   }
+
+   if(((int)data->indirecttext.validstring)>0)
+   {
+    xstrcpy(w,r+(int)data->indirecttext.validstring);
+    data->indirecttext.validstring=w;
+    w+=strlen(w)+1;
+   }
+   else 
+   {
+    data->indirecttext.validstring=NULL;
+   }
+  }
+  else
+  if(flags & wimp_ISPRITE)
+  {
+   if(((int)data->indirectsprite.name)>0)
+   {
+    xstrcpy(w,r+(int)data->indirectsprite.name);
+    data->indirectsprite.name=w;
+    w+=strlen(w)+1;
+   }
+   else 
+   {
+    data->indirectsprite.name=NULL;
+   }
+  }
+ }
+
+ if(flags & wimp_IFONT)
+ {
+  err=tempfont(flagsp,windspace+foffset);
+ }
+
+ *wp=w;
+
+ return(err);
+}
+
+
+#define TEMPGAP 0x800
+
+static int tempseq=0x10000;
+
+
+os_error * addtemplates(char * path,char * leaf,templates * temptable,
+                                                            templink * link)
+{
+ os_error  *   err;
+ char          name[256];
+ int           i;
+ wimp_wind *   ww;
+ fstat         fs;
+ int           foffset;
+ int           minoffset;
+ int           maxoffset;
+ int         * q;
+ char        * base; // this is where the template file is loaded, it is in the flex buffer holding all templates and can move,
+                     // template offsets are relative to base
+ char        * tbase; // this is where we make a copy of the index in the template file, it is at the end of the flex buffer holding all the templates
+ int           tsize;
+ int           size;
+ char        * r;
+ char        * w;
+ wimp_icon   * icon;
+ templates   * tx;
+ char        * p;
+ char        * p1;
+ int           flen;
+ int           space;
+
+
+ memset(tfmap,0,sizeof(tfmap));
+
+ strcpy(name,path);
+ strcat(name,".");
+ strcat(name,leaf);
+
+ err=fs_stat(name,&fs);
+ if(!err)
+ {
+  if(fs.object!=1) err=geterror(ETEMPF);
+  else
+  {
+   err=flex_extend((flex_ptr)&windspace,windsize+fs.length+WINDCHUNK);
+   if(!err)
+   {
+    base=windspace+windsize+WINDCHUNK;
+    minoffset=maxoffset=0;
+
+    if(!err) err=fs_loadblock(name,base);
+    if(!err)
+    {
+     decryptresourceblock(base,&fs.length);
+     flen=(fs.length+3)&(~3);
+
+     if(!temptable || !link) // we're loading an entire template file and there is no temptable datastructure in memory
+                             // in other words load all the templates in the file
+     {                       // it is a template file in an applet that consists of just script files and no C code
+                             // so we generate a template table for the file
+      link=(templink*)(windspace+windsize);
+      windsize+=sizeof(templink);
+
+      p=p1=(windspace+windsize);
+
+      q=(int*)(base+16); // skip 4 header words
+      while(*q) // go through index entries  - 6 words each
+      {
+       xstrcpy(p,((char*)q)+12);
+       p+=strlen(p)+1;
+       q+=6;
+      }
+
+      windsize+=((p-p1)+0x3)&(~0x3);
+      p=p1;
+
+      tx=temptable=(templates*)(windspace+windsize);
+
+      q=(int*)(base+16);
+      while(*q)
+      {
+       tx->tempno=tempseq++;
+       tx->spritearea=1;
+       tx->id.offset=0;
+       tx->id.tempname=p;
+       p+=strlen(p)+1;
+       q+=6;
+       tx++;
+       windsize+=sizeof(templates);
+      }
+
+      tx->tempno=TLAST;
+      windsize+=sizeof(templates);
+     }
+     
+     link->temps=temptable; // link the template table into the others in memory
+     link->next=firstlink;
+     firstlink=link;
+
+
+// now we're going to copy the template index from the start of the template file
+// to the end of the memory block that holds templates
+// we're doing this because once the templates are loaded there is no further use for
+// the index and the memory can be reclaimed.
+
+     q=(int*)(base);
+     foffset=*q;
+     foffset+=(char*)base-windspace; /* windsize+WINDCHUNK; */
+
+     q=(int*)(base+16);
+     while(*q)
+     {
+      *(q+2)=-1;  // filling entry type with -1, because we're going to use this memory location as a marker for templates we need to load
+      q+=6;
+     }
+
+
+     tsize=((char*)q)-base-12;
+
+     err=flex_extend((flex_ptr)&windspace,/*windsize+WINDCHUNK+*/ 
+                                   ((char*)base-windspace)+flen+tsize);
+
+//dprintf(0,"flen %x tsize %x",flen,tsize);
+
+// finished copying the template index
+
+     if(!err)
+     {
+      tbase=base+flen;
+      memcpy(tbase,base+16,tsize);
+
+
+// now have a look at the template file contents and find
+// the offsets of the templates we need to load
+// possibly we''re not loading every template
+// find which ones are needed by comparing the names with those
+// in the template table.
+
+      for(i=0;temptable[i].tempno!=TLAST;i++)
+      {
+//dprintf(1,"i=%d",i);
+
+       q=(int*)(tbase);
+
+       while(*q)
+       {
+        if(!xcstrncmp(temptable[i].id.tempname,((char*)q)+12,12))
+        {
+         *(q+2)=i; // mark this template as one that has to be loaded
+
+//dprintf(0,"hit i %d",i);
+
+         if(!minoffset) minoffset=*q;
+         else           minoffset=MIN(minoffset,(*q));
+
+         if(!maxoffset) maxoffset=*q;
+         else           maxoffset=MAX(maxoffset,(*q));
+         break;
+        }
+        q+=6;
+       }
+
+       if(!(*q)) 
+       {
+        err=geterrorf(ETEMP,temptable[i].id.tempname);
+        break;
+       }
+      }
+
+
+
+      if(!err)
+      {
+       w=windspace+windsize;
+       q=(int*)tbase;
+
+       while(1) // scan all the templates
+       {
+//dprintf(0,"next temp");
+        if((*q)!=minoffset) q=findoffset(minoffset,tbase);
+        if(!q) 
+        {
+         err=geterrorf(ETEMP,"");
+         break;
+        }
+
+//dprintf(0,"next 2 q=%x",q);
+
+        r=base+(*q);
+        i=*(q+2);
+        tsize=*(q+1);
+                     
+dprintf(0,"next 3 i=%d r %x",i,r);
+
+        if(i>=0)  // marked above as needed to be loaded
+        {
+         temptable[i].id.offset=w-windspace;
+//dprintf(0,"a %d",w-windspace);
+
+//if((r-w)<sizeof(wimp_wind)) dprintf(0,"ALERT 1");
+
+         memcpy(w,r,sizeof(wimp_wind));
+         ww=(wimp_wind*)w;
+         w+=sizeof(wimp_wind);
+         size=ww->nicons*sizeof(wimp_icon);
+
+//dprintf(0,"b size %d",size);
+
+
+//if((r-w)<size) dprintf(0,"ALERT 2");
+
+
+
+         space=MAX((size+TEMPGAP),WINDCHUNK);
+         space=(space+3) & (~3);
+
+          if((r-w)<(size+TEMPGAP))
+          {
+dprintf(0,"expand space1 %d",r-w);
+           flex_midextend((flex_ptr)&windspace,w-windspace,space);
+           r+=space;
+           base+=space;
+//dprintf(0,"base %x w %x %d",base,w,base>w);
+           tbase+=space;
+           foffset+=space;
+           q=(int*)(((char*)q)+space);
+           dprintf(0,"expand1");
+          }
+
+
+
+         memcpy(w,r+sizeof(wimp_wind),size);
+         w+=size;
+
+
+         icon=(wimp_icon*)(ww+1);
+
+         ww->spritearea=(char *)1;
+
+         err=relocicon(&ww->titleflags,&ww->title,&w,r,foffset);
+
+         dprintf(0,"name=%s icons=%d",temptable[i].id.tempname,
+                                      ww->nicons);  
+
+         for(i=0;i<ww->nicons;i++)
+         {
+//dprintf(0,"icon i %d",i);
+
+
+          if((r-w)<TEMPGAP)
+          {
+dprintf(0,"expand space %d",r-w);
+           flex_midextend((flex_ptr)&windspace,w-windspace,WINDCHUNK);
+           r+=WINDCHUNK;
+           base+=WINDCHUNK;
+//dprintf(0,"base %x w %x %d",base,w,base>w);
+           tbase+=WINDCHUNK;
+           foffset+=WINDCHUNK;
+           q=(int*)(((char*)q)+WINDCHUNK);
+           dprintf(0,"expand");
+          }
+
+          err=relocicon(&icon->flags,&icon->data,&w,r,foffset);
+          if(err) break;
+
+          icon++;
+         }
+        }
+
+        if(minoffset>=maxoffset) break;
+        minoffset+=tsize;
+        q+=6;
+        w=(char*)(((int)w+3)&(~3));
+       }
+
+       windsize=w-windspace;
+       windsize=(windsize+3)&(~3);
+      }
+     }
+    }
+   }
+  }
+ }
+
+ if(!err) err=flex_extend((flex_ptr)&windspace,windsize);
+
+
+/*
+                 
+dprintf(0,"tail start %x",temptable);
+
+if(temptable)
+{
+ for(i=0;temptable[i].tempno!=TLAST;i++)
+ {
+  ww=(wimp_wind*)(windspace+temptable[i].id.offset);
+  dprintf(0,"tailX name=%s icons=%d offset=%d",temptable[i].id.tempname,
+                  ww->nicons,temptable[i].id.offset);
+ }
+}
+
+*/
+
+ return(err); 
+}
+
+
+#endif
+
+
+
+
+/* scan template tables */
+
+os_error * findtemp(int tempno,wimp_wind ** ww)
+{
+ templink  * link;
+ templates * temps;
+
+ link=firstlink;
+
+ while(link)
+ {
+  temps=link->temps;
+
+  while(temps->tempno!=TLAST)
+  {
+   if(temps->tempno==tempno)
+   {
+    *ww=(wimp_wind*)(windspace+temps->id.offset);
+
+    if(temps->spritearea==1) (*ww)->spritearea=sprites;
+    else
+    if(temps->spritearea==0) (*ww)->spritearea=(char *)1; 
+
+    return(NULL);
+   }
+   temps++;
+  }
+
+  link=link->next;
+ }
+
+ return(geterrorf(ETEMPX,tempno));
+}
+
+
+
+os_error * findtempname(int * tempno,char * name)
+{
+ templink  * link;
+ templates * temps;
+
+ *tempno=0;
+
+ link=firstlink;
+
+ while(link)
+ {
+  temps=link->temps;
+
+  while(temps->tempno!=TLAST)
+  {
+   if(!cstrcmp(temps->id.tempname,name)) 
+   {
+    *tempno=temps->tempno;
+    return(NULL);
+   }
+   temps++;
+  }
+
+  link=link->next;
+ }
+
+ return(NULL);
+}
+
+
+
+os_error * createwindowtitle(int tempno,char * title,int * handle)
+{
+ os_error  * err;
+ wimp_wind * wp;
+
+ err=findtemp(tempno,&wp);
+ if(!err)
+ {
+  if(title)
+  {
+   if(wp->titleflags & wimp_INDIRECT)
+     strcpy(wp->title.indirecttext.buffer,title);
+   else
+     strcpy(wp->title.text,title);
+  }
+  err=wimp_create_wind(wp,handle);
+ }
+
+ return(err);
+}
+
+
+os_error * createwindowheight(int tempno,int * handle,int h)
+{
+ os_error   * err;
+ wimp_wind  * wp;
+
+ err=findtemp(tempno,&wp);
+ if(!err)
+ {
+  wp->box.y0=wp->box.y1-h;
+  err=wimp_create_wind(wp,handle);
+ }
+
+ return(err);
+}
+
+
+os_error * createwindow(int tempno,int * handle)
+{
+ return(createwindowtitle(tempno,NULL,handle));
+}
+
+
+
+/* called on mode change */
+
+void tempmode(void)
+{
+ os_error  * err;
+ templink  * link;
+ templates * temps;
+ wimp_wind * ww;
+ wimp_icon * wi;
+ int         nicons;
+ int         fh;
+ font_def    fdef;
+ int         i;
+ int         j;
+ wimp_font_array newfontarray;
+
+ err=NULL;
+
+ tfremap=0;
+
+ memset(&newfontarray,0,sizeof(wimp_font_array));
+
+ for(i=0;i<256;i++)
+ {
+  if(fontarray.f[i])
+  {
+   font_readdef(i,&fdef);
+ 
+   for(j=0;j<fontarray.f[i];j++) err=font_lose(i);
+   if(err) break;
+   for(j=0;j<fontarray.f[i];j++) font_find(fdef.name,fdef.xsize,
+                                           fdef.ysize,0,0,&fh);
+   tfmap[i]=fh;
+
+   tfremap|=(i!=fh);
+
+ /*  dprintf(10,"name=%s uses=%d old=%d new=%d",fdef.name,fontarray.f[i],
+                   i,fh);  */
+
+   newfontarray.f[fh]=fontarray.f[i];
+  }
+ }
+
+ if(tfremap)
+ {
+  fontarray=newfontarray;
+
+  link=firstlink;
+
+  while(link)
+  {
+   temps=link->temps;
+   while(temps->tempno!=TLAST)
+   {
+    ww=(wimp_wind*)(windspace+temps->id.offset);
+    nicons=ww->nicons;
+    wi=(wimp_icon*)(windspace+temps->id.offset+sizeof(wimp_wind));
+
+    for(i=0;i<nicons;i++)
+    {
+     if(wi->flags & wimp_IFONT)
+     {
+      fh=(wi->flags & 0xFF000000)>>24;
+
+   /* dprintf(10,"tempno=%x fh=%d icon=%d",temps->tempno,fh,i); */
+
+      wi->flags=(wimp_iconflags)(((int)wi->flags) & (~0xFF000000));
+      wi->flags=(wimp_iconflags)(((int)wi->flags) | (tfmap[fh]<<24));
+     }
+     wi++;
+    }
+    temps++;
+   }
+   link=link->next;
+  }
+ }
+}
+
+
+os_error * tempremapwindow(int handle)
+{
+ os_error       * err;
+ int              i;
+ wimp_i           list[128];     /* max 128 icons */
+ wimp_which_block which;
+ wimp_icon        icon;
+ int              fh;
+
+ err=NULL;
+
+ if(tfremap)
+ {
+
+  /* err=wimp_get_wind_info((wimp_winfo*)(((int)&winfo)|0x1)); */
+                            /* just header */
+
+  /* can use wimp_whichicon PRM 3-162 */
+
+  which.window=handle;
+  which.bit_mask=wimp_IFONT;
+  which.bit_set=wimp_IFONT;
+
+  err=wimp_which_icon(&which,list);
+
+  for(i=0;list[i]>=0;i++)
+  {
+   wimp_get_icon_info(handle,list[i],&icon);
+   fh=(icon.flags & 0xFF000000)>>24;
+   wimp_set_icon_state((wimp_w)handle,(wimp_i)list[i],
+                (wimp_iconflags)(tfmap[fh]<<24),(wimp_iconflags)0xFF000000);
+  }
+ }
+
+ return(err);
+}
+
+
+os_error * finittemp(void)
+{
+ os_error * err;
+ int        i;
+ int        j;
+
+ err=NULL;
+
+ for(i=0;i<256;i++)
+ {
+  for(j=0;j<fontarray.f[i];j++) err=font_lose(i);
+  if(err) break;
+ }
+
+ return(err);
+}
+
+
+
+os_error * inittemp(void)
+{
+ os_error * err;
+
+ err=NULL;
+
+#ifdef OLDTEMPS
+ worksize=0;
+ err=flex_alloc((flex_ptr)&workspace,0);
+#else
+ if(!err) err=flex_alloc((flex_ptr)&windspace,0);
+ windsize=0;
+#endif
+
+ firstlink=NULL;
+
+ return(err);
+}
+
+
+
+
+
+
+
+
+
+#ifdef NEVER
+
+
+      
+Template files
+The following section describes the Wimp template file format:
+
+Header
+The file starts with a header:
+
+Size    Description
+4    file offset of font data (-1 if none)
+4    reserved (must be zero)
+4    reserved (must be zero)
+4    reserved (must be zero)
+Index entries
+The header is followed by a series of index entries to data later in the file:
+
+Size    Description
+4    file offset of data for this entry
+4    size of data for this entry
+4    entry type (1 = window)
+12    identifier (control character terminated)
+Terminator
+The index entries are terminated by a null word:
+
+Size    Description
+4    0
+Data
+Each set of entries referred to earlier in the index contains the following:
+
+Size    Description
+88    window definition (as in Wimp_CreateWindow - see Wimp_CreateWindow)
+ni × 32    icon definitions (as in Wimp_CreateIcon - see Wimp_CreateIcon)
+?    indirected icon data
+Any pointers to indirected icon data are offsets from the start of the current entry. Any references to anti-aliased fonts use internal handles.
+
+Font data
+The file ends with an optional set of font data (the presence of which is indicated by the first word of the header):
+
+Size    Description
+4    x-point-size × 16
+4    y-point-size × 16
+40    font name (control character terminated)
+The first font entry is that referred to by internal handle 1, the second font entry is that referred to by internal handle 2, etc.
+
+
+#endif

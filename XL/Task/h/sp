@@ -1,0 +1,19 @@
+/*->h.sp */
+
+extern char     * sprites;
+
+extern int      * spfind(sprite_area * areap,char * name);
+extern os_error * spsave(sprite_header * sph,char * name);
+
+
+extern os_error * addsprites(char * path,char * leaf);
+extern os_error * addspritesx(char * path,char * leaf);
+extern os_error * addspritesxs(char * path,char * leaf,sprite_area ** sprites);
+
+
+extern os_error * initspritess(sprite_area ** sprites);
+extern os_error * initsprites(void);
+
+extern os_error * loadspritearea(char * path,char * leaf,sprite_area ** areap,
+                                                                 int flex);
+

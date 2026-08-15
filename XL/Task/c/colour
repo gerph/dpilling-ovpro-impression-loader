@@ -1,0 +1,680 @@
+/*->c.colour */
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+#include <stdarg.h>
+
+
+#include "h.swis"
+#include "h.kernel"
+#include "h.bbc"
+#include "h.os"
+#include "h.wimp"
+
+
+#include "h.wos"
+
+#include "h.colour"
+
+
+
+
+
+
+
+
+
+
+typedef struct modestr
+{
+ char dx;
+ char dy;
+ char ln2bpp;
+ char mask;
+
+} modestr;
+
+
+
+#define MAXMODE 128
+
+static modestr modedata[MAXMODE]=
+{
+2,4,0,0x01,  // mode 0
+4,4,1,0x03,  // mode 1
+8,4,2,0x0f,  // mode 2
+2,4,1,0x03,  // mode 3
+4,4,0,0x01,  // mode 4
+8,4,1,0x03,  // mode 5
+4,4,1,0x03,  // mode 6
+4,4,2,0x0f,  // mode 7
+2,4,1,0x03,  // mode 8
+4,4,2,0x0f,  // mode 9
+8,4,3,0xff,  // mode 10
+2,4,1,0x03,  // mode 11
+2,4,2,0x0f,  // mode 12
+4,4,3,0xff,  // mode 13
+2,4,2,0x0f,  // mode 14
+2,4,3,0xff,  // mode 15
+2,4,2,0x0f,  // mode 16
+2,4,2,0x0f,  // mode 17
+2,2,0,0x01,  // mode 18
+2,2,1,0x03,  // mode 19
+2,2,2,0x0f,  // mode 20
+2,2,3,0xff,  // mode 21
+1,2,2,0x0f,  // mode 22
+2,2,0,0x01,  // mode 23
+2,4,3,0xff,  // mode 24
+2,2,0,0x01,  // mode 25
+2,2,1,0x03,  // mode 26
+2,2,2,0x0f,  // mode 27
+2,2,3,0xff,  // mode 28
+2,2,0,0x01,  // mode 29
+2,2,1,0x03,  // mode 30
+2,2,2,0x0f,  // mode 31
+2,2,3,0xff,  // mode 32
+2,4,0,0x01,  // mode 33
+2,4,1,0x03,  // mode 34
+2,4,2,0x0f,  // mode 35
+2,4,3,0xff,  // mode 36
+2,4,0,0x01,  // mode 37
+2,4,1,0x03,  // mode 38
+2,4,2,0x0f,  // mode 39
+2,4,3,0xff,  // mode 40
+2,4,0,0x01,  // mode 41
+2,4,1,0x03,  // mode 42
+2,4,2,0x0f,  // mode 43
+2,4,0,0x01,  // mode 44
+2,4,1,0x03,  // mode 45
+2,4,2,0x0f,  // mode 46
+4,4,3,0xff,  // mode 47
+4,2,2,0x0f,  // mode 48
+4,2,3,0xff,  // mode 49
+1,1,0,0x01,  // mode 50
+1,1,0,0x01,  // mode 51
+1,1,0,0x01,  // mode 52
+1,1,0,0x01,  // mode 53
+1,1,0,0x01,  // mode 54
+1,1,0,0x01,  // mode 55
+1,1,0,0x01,  // mode 56
+1,1,0,0x01,  // mode 57
+1,1,0,0x01,  // mode 58
+1,1,0,0x01,  // mode 59
+1,1,0,0x01,  // mode 60
+1,1,0,0x01,  // mode 61
+1,1,0,0x01,  // mode 62
+1,1,0,0x01,  // mode 63
+1,1,0,0x01,  // mode 64
+1,1,0,0x01,  // mode 65
+1,1,0,0x01,  // mode 66
+1,1,0,0x01,  // mode 67
+1,1,0,0x01,  // mode 68
+1,1,0,0x01,  // mode 69
+1,1,0,0x01,  // mode 70
+1,1,0,0x01,  // mode 71
+1,1,0,0x01,  // mode 72
+1,1,0,0x01,  // mode 73
+1,1,0,0x01,  // mode 74
+1,1,0,0x01,  // mode 75
+1,1,0,0x01,  // mode 76
+1,1,0,0x01,  // mode 77
+1,1,0,0x01,  // mode 78
+1,1,0,0x01,  // mode 79
+1,1,0,0x01,  // mode 80
+1,1,0,0x01,  // mode 81
+1,1,2,0x0F,  // mode 82
+1,1,0,0x01,  // mode 83
+1,1,0,0x01,  // mode 84
+1,1,0,0x01,  // mode 85
+1,1,0,0x01,  // mode 86
+1,1,0,0x01,  // mode 87
+1,1,0,0x01,  // mode 88
+1,1,0,0x01,  // mode 89
+1,1,0,0x01,  // mode 90
+1,1,0,0x01,  // mode 91
+1,1,0,0x01,  // mode 92
+1,1,0,0x01,  // mode 93
+1,1,0,0x01,  // mode 94
+1,1,0,0x01,  // mode 95
+1,1,0,0x01,  // mode 96
+1,1,0,0x01,  // mode 97
+1,1,0,0x01,  // mode 98
+1,1,0,0x01,  // mode 99
+1,1,0,0x01,  // mode 100
+1,1,0,0x01,  // mode 101
+1,1,0,0x01,  // mode 102
+1,1,0,0x01,  // mode 103
+1,1,0,0x01,  // mode 104
+1,1,0,0x01,  // mode 105
+1,1,0,0x01,  // mode 106
+1,1,0,0x01,  // mode 107
+1,1,0,0x01,  // mode 108
+1,1,0,0x01,  // mode 109
+1,1,0,0x01,  // mode 110
+1,1,0,0x01,  // mode 111
+1,1,0,0x01,  // mode 112
+1,1,0,0x01,  // mode 113
+1,1,0,0x01,  // mode 114
+1,1,0,0x01,  // mode 115
+1,1,0,0x01,  // mode 116
+1,1,0,0x01,  // mode 117
+1,1,0,0x01,  // mode 118
+1,1,0,0x01,  // mode 119
+1,1,0,0x01,  // mode 120
+1,1,0,0x01,  // mode 121
+1,1,0,0x01,  // mode 122
+1,1,0,0x01,  // mode 123
+1,1,0,0x01,  // mode 124
+1,1,0,0x01,  // mode 125
+1,1,0,0x01,  // mode 126
+1,1,0,0x01,  // mode 127
+
+};
+
+
+
+
+
+
+int spriteheader_class(newsprite_header * sph)
+{
+ if ((sph->selector.type5.reserved3 == 15)
+      && (sph->selector.type5.reserved2 == 0)
+      && (sph->selector.type5.reserved1 == 0)
+      && (sph->selector.type5.new == 1))
+ {
+  return(SPRITE_RISCOS5);
+ }
+ else
+ {
+  if(sph->selector.type.type)
+  {
+   return(SPRITE_RISCOS35);
+  }
+  else
+  {
+   return(SPRITE_ORIGINAL);
+  }
+ }
+
+ return(SPRITE_ORIGINAL);
+}
+
+
+int spritemode_class(int mode)
+{
+ newsprite_header sph;
+
+ sph.selector.bbcmode=mode;
+
+ return(spriteheader_class(&sph));
+}
+
+
+int spriteheader_rgborder(newsprite_header * sph)
+{
+ if ((sph->selector.type5.reserved3 == 15)
+      && (sph->selector.type5.reserved2 == 0)
+      && (sph->selector.type5.reserved1 == 0)
+      && (sph->selector.type5.new == 1))
+ {
+  dprintf(21,"flags %x type %d",sph->selector.type5.flags,sph->selector.type5.type);
+
+  if((sph->selector.type5.flags & (3<<4))==0)
+  {
+   if((sph->selector.type5.flags & (1<<6))==(1<<6))
+   {
+    if(sph->selector.type5.type==SPRITE_XBGR8888 || sph->selector.type5.type==SPRITE_XBGR1555)
+    {
+     return(1);
+    }
+   }
+  }
+ }
+ return(0);
+}
+
+
+int spritemode_rgborder(int mode)
+{
+ newsprite_header sph;
+
+ sph.selector.bbcmode=mode;
+
+ return(spriteheader_rgborder(&sph));
+}
+
+
+
+static int eigentable[4]={180,90,45,22};
+static int deltatable[4]={1,2,4,8};
+
+os_error * Xgetdeltas(int mode,int * dx,int * dy)
+{
+ newsprite_header sph;
+ int xdpi;
+ int ydpi;
+
+ sph.selector.bbcmode=mode;
+                           
+ if(sph.selector.type5.reserved3==0xF)
+ {
+  if(dx) *dx=deltatable[sph.selector.type5.xeigen];
+  if(dy) *dy=deltatable[sph.selector.type5.yeigen];
+ }
+ else
+ if(sph.selector.type.type)  /* it is a new sprite */
+ {
+  xdpi=sph.selector.type.xdpi;
+  ydpi=sph.selector.type.ydpi;
+  if(xdpi==0) xdpi=90;
+  if(dx) *dx=180/xdpi;
+  if(ydpi==0) ydpi=90;
+  if(dy) *dy=180/ydpi;
+ }
+ else
+ {
+  mode&=0x7F;
+  if(dx) *dx=modedata[mode].dx;
+  if(dy) *dy=modedata[mode].dy;
+ }
+
+ return(NULL);
+}
+
+
+static int bppmap[19]={0,1,2,4,
+                       8,16,32,32,
+                       24,24,16,24,24,24,24,24,16,8,8};
+static int bitmaskmap[19]={0,0x1,0x3,0xF,0xFF,0x7FFF,0xFFFFFF,0xFFFFFFFF,0xFFFFFF,0xFFFFFF,0xFFFFFF,0xFFFFFF,0xFFFFFF,0xFFFFFF,0xFFFF,0xFF,0xFF};
+
+os_error * Xgetbpp(int mode,int * bpp,int * bitmask)
+{
+ int type;
+ newsprite_header sph;
+
+ sph.selector.bbcmode=mode;
+
+ if(sph.selector.type5.reserved3==0xF)
+ {
+  type=sph.selector.type5.type;
+  if(bpp) *bpp=bppmap[type];
+
+dprintf(20,"bpp %d type %d",bppmap[type],type);
+  if(bitmask) *bitmask=bitmaskmap[type];
+ }
+ else
+ if(sph.selector.type.type)  /* it is a new sprite */
+ {
+  type=sph.selector.type.type;
+  if(bpp) *bpp=bppmap[type];
+  if(bitmask) *bitmask=bitmaskmap[type];
+ }
+ else
+ {
+  mode&=0x7F;
+
+  if(bpp) *bpp=(1<<modedata[mode].ln2bpp);
+  if(bitmask) *bitmask=modedata[mode].mask;
+ }
+
+ return(NULL);
+}
+
+
+
+
+os_error * Xgetspriteinfo(newsprite_header * sph,int * xdpi,int * ydpi,int * bpp)
+{
+ int mode;
+
+ if(sph->selector.type5.reserved3==0xF)
+ {
+  if(xdpi) *xdpi=eigentable[sph->selector.type5.xeigen];
+  if(ydpi) *ydpi=eigentable[sph->selector.type5.yeigen];
+  if(bpp)  *bpp=bppmap[sph->selector.type5.type];
+ }
+ else
+ if(sph->selector.type.type)  /* it is a new sprite */
+ {
+  if(xdpi) *xdpi=sph->selector.type.xdpi;
+  if(ydpi) *ydpi=sph->selector.type.ydpi;
+  if(bpp)  *bpp=bppmap[sph->selector.type.type];
+ }
+ else
+ {
+  mode=sph->selector.mode.mode & 0x7F;
+  if(xdpi) *xdpi=180/modedata[mode].dx;
+  if(ydpi) *ydpi=180/modedata[mode].dy;
+  if(bpp)  *bpp=(1<<modedata[mode].ln2bpp);
+ }
+
+ return(NULL);
+}
+
+
+
+
+
+
+os_error * Xgetspritesize(newsprite_header * sph,int * xpix,int * ypix,int * bpp)
+{
+ int spbpp;
+ int mode;
+ int bitwidth;
+ int type;
+
+
+ if(sph->selector.type5.reserved3==0xF)
+ {
+  type=sph->selector.type5.type;
+  spbpp=bppmap[type];
+ }
+ else
+ if(sph->selector.type.type)  /* it is a new sprite */
+ {
+  type=sph->selector.type.type;
+  spbpp=bppmap[type];
+ }
+ else
+ {
+  mode=sph->selector.mode.mode & 0x7F;
+  spbpp=(1<<modedata[mode].ln2bpp);
+ }
+
+ bitwidth=32*(sph->width+1)-sph->lbit-(31-sph->rbit);
+ if(xpix) *xpix=bitwidth/spbpp;
+ if(ypix) *ypix=sph->height+1;
+ if(bpp)  *bpp=spbpp;
+
+ return(NULL);
+}
+
+
+
+
+
+
+
+
+
+
+
+/****************************************************************************/
+/* Colour */
+
+
+
+int getcolnumber(int pal)
+{
+ os_regset rx;
+ rx.r[0]=pal;
+ os_swix(ColourTrans_ReturnColourNumber,&rx);
+ return(rx.r[0]);
+}
+
+
+
+int getgcolnumber(int pal)
+{
+ os_regset rx;
+ rx.r[0]=pal;
+ os_swix(ColourTrans_ReturnGCOL,&rx);
+ return(rx.r[0]);
+}
+
+
+
+
+os_error * setgcolour(int wcol,int eor)
+{
+ os_error * err;
+
+ if(cvdu.ncolours==63)
+ {
+  err=bbc_gcol(eor?3:0,wcol >> 2);
+  if(!err) err=bbc_tint(eor?2:0,wcol & 0x3);
+ }
+ else
+ {
+  err=bbc_gcol(eor?3:0,wcol);
+ }
+
+ return(err);
+}
+
+
+
+static os_error * set_colour(int wcol,int mode)
+{
+ os_error       * err;
+ os_regset        rx;
+ int              temp;
+ static int nosetcolour=0;
+
+ err=NULL;
+
+ if(!nosetcolour)
+ {
+  rx.r[0]=mode;
+  rx.r[1]=wcol;
+
+  err=os_swix(OS_SetColour,&rx); /* not in RISC OS 2 */
+  if(err) nosetcolour=1;
+ }
+
+ if(nosetcolour)
+ {
+  if(cvdu.ln2bpp==3)
+  {
+   temp=wcol & 0x78;
+   wcol=wcol & 0x87;
+   if(temp & 0x8) temp|=0x80;
+   temp=temp>>1;
+   temp&=0x78;
+   wcol|=temp;
+
+   err=bbc_gcol(mode,wcol>>2);
+   bbc_tint(2,wcol & 0x3);
+  }
+  else
+  {
+   err=bbc_gcol(mode,wcol);
+  }
+ }
+
+ return(err);
+}
+
+
+
+
+
+os_error * seteorcol(int back,int front)
+{
+ int              wcol;
+
+ wcol=cvdu.wimpcolnos[back] ^ cvdu.wimpcolnos[front];
+
+ return(set_colour(wcol,3));
+}
+
+
+
+/* in this version back is a real colour */
+
+os_error * seteorcolpal(int back,int front)
+{
+ int        wcol;
+
+ wcol=cvdu.wimpcolnos[front] ^ getcolnumber(back);
+
+ return(set_colour(wcol,3));
+
+
+/* 
+
+ int               wcol;
+ wimp_palettestr   palt;
+
+ err=wimp_readpalette(&palt);
+ back=getgcolnumber(back);
+
+ wcol=back ^ palt.c[front].bytes.gcol;
+
+ if(!err) err=setgcolour(wcol,1); 
+
+ return(err); */
+}
+
+
+
+
+os_error * setgcolactionreturn(int pal,int action,int * value)
+{
+ os_error * err;
+ os_regset  rx;
+
+ rx.r[0]=pal;
+ rx.r[3]=0x100; /* dither */
+ rx.r[4]=action;
+ err=os_swix(ColourTrans_SetGCOL,&rx);
+ *value=rx.r[0];
+
+ return(err);
+}
+
+os_error * setgcolaction(int pal,int action)
+{
+ os_regset rx;
+ rx.r[0]=pal;
+ rx.r[3]=0x100; /* dither */
+ rx.r[4]=action;
+ return(os_swix(ColourTrans_SetGCOL,&rx));
+}
+
+os_error * setgcol(int pal)
+{
+ return(setgcolaction(pal,0));
+}
+
+
+
+int setoppgcol(int pal)
+{
+ os_regset rx;
+ rx.r[0]=pal & 0xFFFFFF00;
+ rx.r[1]=0;
+ rx.r[2]=0;
+ rx.r[3]=0x0; /* 0x100; */ /* dither */
+ rx.r[4]=0x0;
+ os_swix(ColourTrans_SetOppGCOL,&rx);
+ return(rx.r[0]);
+}
+
+
+
+
+os_error *selecttable(int sourcemode, int *sourcepal, int destmode,
+                      int *destpal, char *transtab)
+{
+ os_regset regs ;
+
+ regs.r[0] = sourcemode ;
+ regs.r[1] = (int) sourcepal ;
+ regs.r[2] = destmode ;
+ regs.r[3] = (int) destpal ;
+ regs.r[4] = (int) transtab ;
+
+ return (os_swix(0x40740/*ColourTrans_SelectTable*/, &regs)) ;
+}
+
+
+
+os_error * selectsptable(sprite_header * sprite,char pixtrans[],int size)
+{
+ os_regset regs;
+
+ regs.r[0]=(int)sprite;
+ regs.r[1]=(int)sprite;
+ regs.r[2]=-1;
+ regs.r[3]=-1 ;
+ regs.r[4]=(int)pixtrans;
+ regs.r[5]=1;
+ if(size>256) regs.r[5]|=(1<<4);
+
+ return(os_swix(ColourTrans_SelectTable,&regs));
+}
+
+
+
+
+
+os_error * getdeltas(int mode,int * dx,int * dy)
+{
+ os_error * err;
+ int        xospx;
+ int        yospx;
+
+ if(spritemode_class(mode)==SPRITE_RISCOS5)
+ {
+  err=Xgetdeltas(mode,dx,dy);
+ }
+ else
+ {
+           err=bbc_modevarx(mode,bbc_XEigFactor,&xospx);
+  if(!err) err=bbc_modevarx(mode,bbc_YEigFactor,&yospx);
+
+  if(!err)
+  {
+   *dx=1<<xospx;
+   *dy=1<<yospx;
+  }
+  else
+  {
+   *dx=*dy=2;
+  }
+ }
+ return(err);
+}
+
+
+
+os_error * getbpp(int mode,int * rln2bpp,int * bitmask)
+{
+ os_error * err;
+ int        ln2bpp; 
+ int        max;
+ int        mask;
+ int        i;
+
+
+ if(spritemode_class(mode)==SPRITE_RISCOS5)
+ {
+  err=Xgetbpp(mode,rln2bpp,bitmask);
+ }
+ else
+ {
+  err=bbc_modevarx(mode,bbc_Log2BPP,&ln2bpp); 
+  if(!err)
+  {
+   max=1<<ln2bpp;
+   mask=0;
+   for(i=0;i<max;i++) mask|=(1<<i);
+  }
+  else
+  {
+   ln2bpp=3;
+   mask=0xFF;
+  }
+
+  if(rln2bpp) *rln2bpp=ln2bpp;
+  if(bitmask) *bitmask=mask;
+ }
+
+ return(err);
+}
+

@@ -1,0 +1,30 @@
+/*->h.task */
+
+
+#define EVENT_LOADSPRITES    0x10000
+#define EVENT_LOADMESSAGES   0x10001
+#define EVENT_LOADTEMPLATES  0x10002
+#define EVENT_LOADERRORS     0x10003
+#define EVENT_LOADHELP       0x10004
+#define EVENT_SCRIPTINIT     0x10005
+#define EVENT_SUBRESOURCES   0x10006
+
+
+typedef os_error * (*taskinitfn)(int code);
+
+
+extern os_error * inittask(char * name,char * textname,char * spritename,
+                           char * resources,char * apps,taskinitfn initfn);
+
+extern os_error * inittaska(char * name,char * textname,char * spritename,
+                            char * resources,char * apps,taskinitfn initfn);
+
+
+extern int        resexists(char * path,char * leaf);
+
+extern void       runtask(void);
+extern int        wimpversion;
+extern os_error * finittask(void);
+
+extern os_error * taskerrors(void);
+

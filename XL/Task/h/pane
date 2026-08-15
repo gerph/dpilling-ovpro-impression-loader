@@ -1,0 +1,21 @@
+/*->h.pane */
+
+
+typedef struct panestr
+{
+ int handle;
+ int xshift;
+ int yshift;
+ int xshiftright;
+ int yshiftbottom;
+} panestr;
+
+
+extern os_error * openparent(int handle,wimp_openstr * wopen,
+                                                       panestr * panes,int n);
+extern os_error * popupparent(int handle,panestr * panes,int n);
+
+extern os_error * forward(int handle,int userhandle,openfn opener);
+
+extern void coerceboxscreen(wimp_box * box,int w,int h);
+

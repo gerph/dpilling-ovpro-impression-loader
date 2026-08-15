@@ -1,0 +1,399 @@
+/*->c.mlo */
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <stdarg.h>
+#include <string.h>
+#include <signal.h>
+#include <ctype.h>
+#include <time.h>
+
+#include "h.os"
+#include "h.wimp"
+#include "h.akbd"
+#include "h.flex"
+
+#include "h.err"
+#include "h.alloc"
+#include "h.xext"
+#include "h.wos"
+#include "h.poll"
+#include "h.mym"
+#include "h.key"
+#include "h.fsx"
+#include "h.etc"
+
+
+#include "h.mlo"
+
+
+
+menustr * menus;
+
+static int * menublock;
+
+static int   lastmenu;
+
+       int   usermenuindex;
+
+
+os_error * openupmenu(int handle)
+{
+ lastmenu=handle;
+ popmenu(menus[handle].menuptr,menus[handle].flags & MFINFO);
+ return(NULL);
+}
+
+
+void setmenufns(int n,menudecodefn decode,menudynamicfn dynamic)
+{
+ menus[n].decode=decode;
+ menus[n].dynamic=dynamic;
+}
+
+void setmenudynamic(int n,int item)
+{
+ dynamic(menus[n].menuptr,item);
+}
+
+void setmenuflags(int n,int flags)
+{
+ menus[n].flags=flags;
+}
+
+void tickmenust(int n,int item,int state)
+{
+ tickst(menus[n].menuptr,item,state);
+}
+
+void unshademst(int n,int item,int state)
+{
+ unshadest(menus[n].menuptr,item,state);
+}
+
+
+static os_error * menumessage(wimp_msgstr * msg,int * ack)
+{
+ os_error * err;
+ int        submenu;
+ int        x;
+ int        y;
+ int      * menu;
+
+ err=NULL;
+ *ack=0;
+
+
+ submenu=msg->data.words[0];
+ x=msg->data.words[1];
+ y=msg->data.words[2];
+ menu=msg->data.words+3;
+
+ if(menus[lastmenu].dynamic)
+ {
+  menus[lastmenu].dynamic(menu,&submenu);
+  err=wimp_create_submenu((wimp_menustr *)submenu,x,y);
+ }
+
+ return(err);
+}
+
+
+
+/* get clicks on menus */
+
+static os_error * menuhandler(int * menu)
+{
+ os_error * err;
+
+ err=NULL;
+
+ setrepopflag();
+
+ if(menus[lastmenu].decode)
+ {
+  err=menus[lastmenu].decode(menu);
+ }
+
+ repopmenu();
+
+ return(err);
+}
+
+
+
+os_error * menulostart(char * path,char * leaf)
+{
+ os_error  *   err;
+ char          name[256];
+ fstat         f;
+ int           fh;
+ int           load;
+ int           numenus;
+ int           menuc;
+ int         * base;
+ int           flags;
+ int           subs;
+ int           iflag;
+ int           idat1;
+
+
+ strcpy(name,path);
+ strcat(name,".");
+ strcat(name,leaf);
+
+
+ err=fs_stat(name,&f);
+ if(!err && f.object)
+ {
+  err=salloc((flex_ptr)&menublock,f.length+sizeof(int));
+  if(!err)
+  {
+
+   err=fs_open(name,'r',&fh);
+   if(!err && fh)
+   {
+    fs_read(fh,&load,sizeof(int));
+    fs_getc(fh,&numenus);
+
+    usermenuindex=numenus;
+
+    err=salloc((flex_ptr)&menus,(numenus+1)*sizeof(menustr));
+
+    if(!err)
+    {
+     base=menublock;
+     for(menuc=0;menuc<numenus;menuc++)
+     {
+      menus[menuc].menuptr=base;
+      menus[menuc].dynamic=NULL;
+      menus[menuc].decode=NULL;
+
+
+      fs_read(fh,base,sizeof(int)*7);
+      base+=7;
+
+      do
+      {
+       fs_read(fh,base,sizeof(int));
+       flags=*base;
+       base++;
+
+       fs_read(fh,&subs,sizeof(int));
+       if(subs>0) subs=subs-load+(int)menublock;
+       *base=subs;
+       base++;
+
+       fs_read(fh,base,sizeof(int));
+       iflag=*base;
+       base++;
+
+       fs_read(fh,&idat1,sizeof(int));
+       if(iflag & 0x100) idat1=idat1-load+(int)menublock;
+       *base=idat1;
+       base++;
+
+       fs_read(fh,base,sizeof(int)*2);
+       base+=2;
+
+      }while((flags & 0x80)==0);
+     }
+     fs_read(fh,base,f.length-(base-menublock)*sizeof(int));
+    }
+    err=fs_close(fh,err);
+   }
+   addmenuhandler(menuhandler);
+   addmessage(menumessage,wimp_MMENUWARN);
+  }
+ }
+
+ return(err);
+}
+
+
+/***************************************************************************/
+
+#define USERMENUCHUNK   0x200
+#define USERSTRINGCHUNK 0x200
+
+static int    strings; /* points to area to store indirected menu entries in */
+
+static int    fontp;
+static int    fontm;
+static int    maxwidth;
+static int  * menuchunk;
+static char * stringchunk;
+
+
+
+static os_error * stringspace(int space)
+{
+ os_error * err;
+ char     * old;
+ int        scan;
+
+ old=stringchunk;
+
+ err=schunk((flex_ptr)&stringchunk,strings+space,USERSTRINGCHUNK);
+ if(!err)
+ {
+  if(stringchunk!=old)
+  {
+   scan=7;
+   while(scan<fontp)
+   {
+    if(menuchunk[scan+2] & 0x100)
+    {
+     menuchunk[scan+3]+=stringchunk-old;
+    }
+    scan+=6;
+   }
+  }
+ }
+
+ return(err);
+}
+
+
+
+
+/* adds an (indirected) item to a menu */
+
+static os_error * writemitem(char * string,int bits,int shade,int * maxl)
+{
+ os_error    * err;
+ int         * smp;
+ int           len;
+ int           xlen;
+
+
+ err=schunk((flex_ptr)&menuchunk,sizeof(int)*(fontp+6),USERMENUCHUNK);
+ if(!err)
+ {
+  menus[usermenuindex].menuptr=(int*)menuchunk;  /* chunk can move */
+
+  smp=menuchunk+fontp;
+
+  smp[0]=bits;
+  smp[1]=-1;
+  smp[4]=0;
+
+  if((unsigned int)string<0x8000)
+  {
+   len=(int)string;
+   xlen=len+1;
+   err=stringspace(xlen);
+   if(!err)
+   {
+    memset(stringchunk+strings,0,xlen); 
+    smp[2]=0x7000121 | shade;
+    smp[3]=(int)(stringchunk+strings);
+    smp[5]=xlen;
+    strings+=xlen;
+   }
+  }
+  else
+  if((len=strlen(string))>12)
+  {
+   xlen=len+1;
+   err=stringspace(xlen);
+   {
+    strcpy(stringchunk+strings,string); 
+    smp[2]=0x7000121 | shade;
+    smp[3]=(int)(stringchunk+strings);
+    smp[5]=xlen;
+    strings+=xlen;
+   }
+  }
+  else
+  {
+   len=strlen(string);
+   smp[2]=0x7000021 | shade;
+   smp[5]=0;
+   smp[3]=0;
+   strcpy((char*)(&smp[3]),string);
+  }
+
+  if(!err)
+  {
+   fontp+=6;
+   if(*maxl<len) *maxl=len;
+  }
+ }
+ return(err);
+}
+
+
+
+
+static void writemheader(int * menup,char * title,int maxwidth)
+{
+ strcpy((char *)menup,title);
+ *(((char *)menup)+12)=7;
+ *(((char *)menup)+13)=2;
+ *(((char *)menup)+14)=7;
+ *(((char *)menup)+15)=0;
+
+ maxwidth=MAX(maxwidth,strlen(title));
+
+ menup[4]=12+16*maxwidth;
+ menup[5]=44;
+ menup[6]=0;
+}
+
+
+
+
+os_error * createusermenu(menudecodefn decode,menudynamicfn dynamic)
+{
+ os_error * err;
+
+ err=NULL;
+
+ maxwidth=0;
+
+ if(!menuchunk) err=salloc((flex_ptr)&menuchunk,USERMENUCHUNK);
+ if(!err)
+ {
+  if(!stringchunk) err=salloc((flex_ptr)&stringchunk,USERSTRINGCHUNK);
+  if(!err)
+  {
+   fontm=0;
+   strings=0;
+   fontp=fontm+7;
+
+   menus[usermenuindex].menuptr=(int*)menuchunk;
+   menus[usermenuindex].dynamic=dynamic;
+   menus[usermenuindex].decode=decode;
+  }
+ }
+
+ return(err);
+}
+
+
+
+
+os_error * addusermenu(char * string,int flags)
+{
+ os_error * err;
+ int        shade;
+
+ shade=flags & MSHADE;
+ if(shade) shade=0x400000;
+
+ flags&=wimp_MTICK|wimp_MSEPARATE|wimp_MWRITABLE|wimp_MSUBLINKMSG;
+
+ err=writemitem(string,flags,shade,&maxwidth);
+
+ return(err);
+}
+
+
+int * completeusermenu(char * title)
+{
+ writemheader(menuchunk+fontm,title,maxwidth);
+ *(menuchunk+fontp-6)|=0x80;
+ return((int*)menuchunk);
+}
+

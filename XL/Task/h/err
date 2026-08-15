@@ -1,0 +1,56 @@
+/*->h.err */
+
+
+typedef struct errtag
+{
+ int     errno;
+ char *  errmsg;
+} errtag;
+
+
+typedef struct errlink
+{
+ struct errlink  * next;
+ errtag          * tags;
+} errlink;
+
+
+#define ENONE  0
+#define ELAST  0
+#define ETASK  1
+#define EMEM   2
+#define ERD    3
+#define EWR    4
+#define EMEMF  5
+#define EINT   6
+#define ETEMP  7
+#define ENOTF  8
+#define ESVDG  9
+#define ENOWS  10
+#define EUXDS  11
+#define EUXRF  12
+#define EMEMAF 13
+#define EMEMBF 14
+#define EMEMAD 15
+#define EMEMFE 16
+#define EMEMCH 17
+#define EMEMBAD   18
+#define ENOTOKVAL 19
+#define ENOEVENT  20
+#define ETEMPX    21
+#define ETEMPF    22
+#define EREPORTED 23
+
+
+extern os_error * adderrortable(errtag * tags,errlink * link);
+extern os_error * geterror(int errno);
+extern os_error * geterrorf(int errno,...);
+extern os_error * generror(int errno,char * format, ...);
+extern os_error * erroradd(os_error * err1,os_error * err2);
+
+extern void errmasklocal(os_error * err);
+extern void errsetlocal(os_error * err);
+
+extern os_error * initerror(void);
+
+

@@ -1,0 +1,228 @@
+/*->c.trans */
+
+
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <stdio.h>
+
+
+#include "h.os"
+
+#include "h.flex"
+
+#include "h.fsx"
+
+#include "h.err"
+#include "h.encrypt"
+
+#include "h.trans"
+
+
+
+
+static char * text;
+static int    size;
+
+/* merge in a new translation table */
+
+os_error * addtranstable(char * path,char * leaf)
+{
+ os_error * err;
+ char       name[256];
+ fstat      f;
+ char     * p;
+ char     * q;
+ char     * r1;
+ char     * r2;
+
+
+ strcpy(name,path);
+ strcat(name,".");
+ strcat(name,leaf);
+
+ err=fs_stat(name,&f);
+ if(!err)
+ {
+  if(!f.object)
+  {
+   if(size) err=geterror(ENOTF);
+   else     err=generror(ENOTF,"Messages file not found. Find a disc with program resources on and try again");
+  }
+  else
+  {
+   err=flex_extend((flex_ptr)&text,size+f.length+2);
+   if(!err)
+   {
+    p=text+size;
+    err=fs_loadblock(name,p);
+    if(!err)
+    {
+     decryptresourceblock(p,&f.length);
+     *(p+f.length)=0;
+     *(p+f.length+1)=0;
+     /*size+=f.length; */
+
+     r1=r2=q=p;
+
+     while(1)
+     {
+      r1=p;
+      while(*p && *p!=':') p++;
+      *p++=0;
+      if(!*p) break;
+
+      r2=p;
+      while(*p>=31) p++;
+      *p++=0;
+      if(!*p) break;
+     }
+
+     if((r2-r1)<2 || (p-r2)<2)
+     {
+      p=r1;
+      *p=0;
+     }
+
+     size+=p-q;
+    }
+   }
+  }
+ }
+
+ return(err);
+}
+
+
+
+
+char * transtoken(char * token)
+{
+ char * p;
+ char * q;
+ int    len;
+
+ if(text)
+ {
+  p=text;
+
+  while(1)
+  {
+   q=p;
+   len=strlen(p);
+   if(!len)
+   {
+    p=token;
+    break;
+   }
+   p+=len+1;
+   if(!strcmp(token,q)) break;
+   len=strlen(p);
+   if(!len)
+   {
+    p=token;
+    break;
+   }
+   p+=len+1;
+  }
+ } else p=token;
+
+ return(p);
+}
+
+
+#define MAXTOKSIZE 32
+
+
+
+/* translate the text in the buffer */
+
+os_error * trans(char * buffer,int maxlen)
+{
+ char * p;
+ char * q;
+ char * limit;
+ char * ps;
+ char   token[MAXTOKSIZE];
+ int    size;
+ int    len;
+ int    delta;
+
+
+ p=buffer;
+ size=strlen(buffer);
+ limit=token+MAXTOKSIZE-1;
+
+ while(*p)
+ {
+  if(*p++=='{')
+  {
+   if(!*p) break;
+   else
+   if(*p=='{')
+   {
+    memmove(p-1,p,size-(p-buffer)+1);
+    size--;
+    p++;
+   }
+   else  /* a token */
+   {
+    q=token;
+    ps=p;
+    while(*p && *p!='}' && q<limit) *q++=*p++;
+    if(!*p || q>=limit)
+    {
+     p=ps;
+    }
+    else
+    {
+     *q=0;
+     p++;
+     q=transtoken(token);
+     len=strlen(q);
+     delta=len-(2+strlen(token));
+
+     if((size+delta)<maxlen)
+     {
+      memmove(p+delta,p,size-(p-buffer)+1);
+      p+=delta-len;
+      size+=delta;
+      memcpy(p,q,len);
+     }
+    }
+   }
+  }
+ }
+ return(NULL);
+}
+
+
+os_error * tsprintf(int maxlen,char * string,char * format, ...)
+{
+ os_error * err;
+ va_list    args;
+ char       buffer[256];
+
+ va_start(args,format);
+ strcpy(buffer,format);
+ err=trans(buffer,sizeof(buffer));
+ vsprintf(string,buffer,args);
+ va_end(args);
+ if(!err) err=trans(string,maxlen);
+
+ return(err);
+}
+
+
+os_error * inittrans(void)
+{
+ os_error * err;
+
+ err=flex_alloc((flex_ptr)&text,0);
+ size=0;
+
+ return(err);
+}
+
+
+

@@ -1,0 +1,90 @@
+/*->h.transform */
+
+
+#define TR_IDENTITY 0x10000,0,0,0x10000,0,0
+
+#define TR_XSHIFT  1
+#define TR_YSHIFT  2
+#define TR_XSCALE  4
+#define TR_YSCALE  8
+#define TR_ROTATE  16
+#define TR_SKEWXY  32
+#define TR_SKEWYX  64
+#define TR_PLUS90  128
+#define TR_MINUS90 256
+#define TR_PLUS180 512
+
+
+#define TR_SHIFT   (TR_XSHIFT | TR_YSHIFT)
+#define TR_SCALE   (TR_XSCALE | TR_YSCALE)
+#define TR_SKEW    (TR_SKEWXY | TR_SKEWYX)
+
+#define TR_GENERAL (TR_SHIFT | TR_SCALE | TR_ROTATE | TR_SKEW)
+
+
+
+
+typedef struct transformstr
+{
+ int a;
+ int b;
+ int c;
+ int d;
+ int e;
+ int f;
+} transformstr;
+
+
+
+typedef struct transformbitstr
+{
+ int xshift;
+ int yshift;
+ int xscale;
+ int yscale;
+ int angle;
+ int skewxy;
+ int skewyx;
+} transformbitstr;
+
+
+
+typedef struct coordstr
+{
+ int x;
+ int y;
+} coordstr;
+
+
+extern void tr_debug(transformstr * t,char * string,int n);
+extern void tr_setidentity(transformstr * t);
+extern void tr_setnull(transformstr * t);
+extern void tr_setrotation(transformstr * t,int xshift,int yshift);
+extern void tr_setrotationd(transformstr * t,int xshift,int yshift,int offset);
+extern void tr_setrotationa(transformstr * t,int a);
+extern void tr_setskew(transformstr * t,int a);
+extern void tr_setscale(transformstr * t,int oldx,int newx,int oldy,int newy);
+extern void tr_setshift(transformstr * t,int dx,int dy);
+extern int  tr_transformset(coordstr * coord,int n,transformstr * t);
+extern int  tr_inverseset(coordstr * coord,int n,transformstr * t);
+extern void tr_multiply(transformstr * r,transformstr * t1,transformstr * t2);
+extern int  tr_cmp(transformstr * t1,transformstr * t2);
+extern void tr_getscale(transformstr * tr,coordstr * scale);
+extern void tr_addscale(transformstr * t,int oldx,int newx,int oldy,int newy);
+extern int  tr_type(transformstr * t);
+extern void tr_inverse(transformstr * t,transformstr * i);
+
+extern int  tr_getbits(transformstr * t,transformbitstr * b);
+extern void tr_setbits(transformstr * t,transformbitstr * b,int bits);
+
+extern int  tr_cos(int a,int r);
+extern int  tr_sin(int a,int r);
+extern int  tr_tan(int a,int r);
+
+extern void tr_delta(transformstr * tr,int * dx,int * dy);
+
+
+extern void tr_setscalepoint(transformstr * t,int xscale,int yscale,
+                                                              int x,int y);
+
+

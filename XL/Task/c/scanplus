@@ -1,0 +1,119 @@
+/*->c.scanplus */
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+#include <stdarg.h>
+
+
+#include "h.swis"
+#include "h.kernel"
+#include "h.bbc"
+#include "h.os"
+#include "h.flex"
+
+
+#include "h.err"
+
+#include "h.fsx"
+
+#include "h.scanplus"
+
+
+
+
+
+#define DRCHUNK 0x1000
+
+
+static int      dirposn;
+static char   * dirbuff;   
+static int      buffposn;
+static int      dirmax;
+
+
+void startscan(void)
+{
+ buffposn=0;
+ dirposn=0;
+}
+
+
+void endscan(void)
+{
+ flex_free((flex_ptr)&dirbuff);
+}
+
+
+int nextitem(fxstat * f)
+{
+ char * buff;
+
+ buff=dirbuff+buffposn;
+
+ if(dirposn>=dirmax) return(0);
+
+ f->f.load  =(* (int *)(buff+0x0));
+ f->f.exec  =(* (int *)(buff+0x4));
+ f->f.length=(* (int *)(buff+0x8));
+ f->f.acc   =(* (int *)(buff+0xC));
+ f->f.object=(* (int *)(buff+0x10));
+ strcpy(f->name,buff+0x14);
+ f->f.type=fs_filetype(f->f.load);
+ dirposn++;
+ buffposn+=5*sizeof(int)+((strlen(f->name)+4)&~0x3);
+
+ return(1);
+}
+
+
+
+os_error * initscan(char * dirname)
+{
+ os_error   * err;
+ os_gbpbstr   gpblock;
+ fxstat       f;
+ int          i;
+ int          posn;
+
+ err=NULL;
+
+ if(!dirbuff) err=flex_alloc((flex_ptr)&dirbuff,DRCHUNK);
+
+ buffposn=0;
+ dirmax=0;
+ dirposn=0;
+ posn=0;
+
+ while(!err)
+ {
+  if(posn==-1) break;
+
+  err=flex_extend((flex_ptr)&dirbuff,buffposn+DRCHUNK);
+  if(err) break;
+
+  gpblock.seq_point=posn;
+  gpblock.action=10;
+  gpblock.file_handle=(int)dirname;
+  gpblock.data_addr=dirbuff+buffposn;
+  gpblock.number=DRCHUNK/sizeof(fstat); /* 80-dirmax; */
+  gpblock.buf_len=DRCHUNK;
+  gpblock.wild_fld=0;
+
+  err=os_gbpb(&gpblock);
+  if(err) break;
+
+  posn=gpblock.seq_point;
+  dirmax+=gpblock.number;
+
+  for(i=0;i<gpblock.number;i++) nextitem(&f);
+ }
+
+ if(err) endscan();
+ else    startscan();
+
+ return(err);
+}
+

@@ -1,0 +1,65 @@
+/*->h.bf */
+
+#define BUFFRAM  1
+#define BUFFMOD  2
+#define BUFFCRIT 4
+
+#define DEFBUFFSIZE 0x8000
+
+#define BUFFMINSIZE 0x100
+
+
+typedef struct buffer
+{
+ char        * data;    /* pointer to data          */
+ struct buff * next;
+ struct buff * prev;
+ int           size;    /* size of buffer           */
+ int           length;  /* size of data in buffer   */
+ int           p;       /* current file pointer     */
+ int           base;    /* offset in file of buffer */
+ int           flags;
+ int           fh;      /* file handle              */
+} buffer;
+
+
+
+
+extern os_error * bf_seek(buffer * bf,int posn);
+extern os_error * bf_seekrel(buffer * bf,int delta);
+extern os_error * bf_tell(buffer * bf,int * posn);
+extern os_error * bf_getc(buffer * bf,int * c);
+extern os_error * bf_gets(buffer * bf,int * c);
+extern os_error * bf_putc(buffer * bf,int c);
+extern os_error * bf_puts(buffer * bf,int c);
+extern os_error * bf_geti(buffer * bf,int * c);
+extern os_error * bf_puti(buffer * bf,int c);
+extern os_error * bf_readn(buffer * bf,void * b,int len,int * n);
+extern os_error * bf_read(buffer * bf,void * b,int len);
+extern os_error * bf_writen(buffer * bf,void * b,int len,int * n);
+extern os_error * bf_write(buffer * bf,void * b,int len);
+extern os_error * bf_open(char * filename,int mode,int size,buffer * bf);
+extern os_error * bf_openc(char * filename,int mode,int type,int size,
+                                                            buffer * bf);
+extern os_error * bf_close(buffer * bf,os_error * ep);
+extern os_error * bf_closec(buffer * bf,os_error * ep,char * name,int type);
+
+extern os_error * bf_saveblock(char * filename,int type,void * start,int len);
+
+extern os_error * bf_loadsize(int * n);
+extern os_error * bf_loadend(os_error * err);
+extern os_error * bf_loaddata(char * name,void * b,int size,int * read,
+                                                            int * eof);
+extern os_error * bf_loadstart(char * name);
+
+extern os_error * bf_printf(buffer * bf,char * format, ...);
+
+extern os_error * bf_getstring(buffer * bf,char * string,int maxlen,int * eof);
+
+extern os_error * stdfileheader(buffer * bf,char * name);
+
+extern os_error * bf_copyn(buffer * bf,int fh,int len,int * write);
+
+extern os_error * bf_dump(buffer * bf);
+
+

@@ -1,0 +1,554 @@
+/*->c.fsx */
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+#include <stdarg.h>
+
+
+#include "h.swis"
+#include "h.kernel"
+#include "h.bbc"
+#include "h.os"
+
+
+#include "h.err"
+
+#include "h.fsx"
+
+
+
+os_error * fs_eof(int fh,int * eof)
+{
+ os_error * err;
+ os_regset  rx;
+
+ rx.r[0]=5;
+ rx.r[1]=fh;
+
+ err=os_swix(OS_Args,&rx);
+
+ *eof=rx.r[2];
+
+ return(err);
+}
+
+
+
+os_error * fs_tell(int fh,int * posn)
+{
+ os_regset  rx;
+ os_error * err;
+
+ rx.r[0]=0;
+ rx.r[1]=fh;
+
+ err=os_swix(OS_Args,&rx);
+
+ *posn=rx.r[2];
+
+ return(err);
+}
+
+
+
+os_error * fs_open(char * name,int mode,int * fh)
+{
+ os_regset  rx;
+ os_error * err;
+ fstat      f;
+
+ err=NULL;
+
+ if(mode=='r') rx.r[0]=0x4F;
+ else
+ if(mode=='w') rx.r[0]=0x8F;
+ else
+ if(mode=='u')
+ {
+  err=fs_stat(name,&f);
+  if(!err)
+  {
+   if(f.object) rx.r[0]=0xCF;
+   else         rx.r[0]=0x8F;
+  }
+ }
+
+ if(!err)
+ {
+  rx.r[1]=(int)name;
+
+  err=os_swix(OS_Find,&rx);
+
+  *fh=rx.r[0];
+ }
+
+ return(err);
+}
+
+
+
+os_error * fs_close(int fh,os_error * ep)
+{
+ os_regset  rx;
+ os_error * err;
+
+ rx.r[0]=0;
+ rx.r[1]=fh;
+
+ err=os_swix(OS_Find,&rx);
+
+ if(!ep) return(err);
+ else    return(ep);
+}
+
+
+
+
+os_error * fs_readat(int fh,void * b,int n,int at)
+{
+ os_regset rx;
+
+ rx.r[0]=3;
+ rx.r[1]=fh;
+ rx.r[2]=(int)b;
+ rx.r[3]=n;
+ rx.r[4]=at;
+
+ return(os_swix(OS_GBPB,&rx));
+}
+
+
+
+os_error * fs_readn(int fh,void * b,int n,int * read)
+{
+ os_error * err;
+ os_regset  rx;
+
+ rx.r[0]=4;
+ rx.r[1]=fh;
+ rx.r[2]=(int)b;
+ rx.r[3]=n;
+
+ err=os_swix(OS_GBPB,&rx);
+
+ *read=n-rx.r[3];
+
+ return(err);
+}
+
+
+
+os_error * fs_read(int fh,void * b,int n)
+{
+ os_error * err;
+ os_regset  rx;
+
+ rx.r[0]=4;
+ rx.r[1]=fh;
+ rx.r[2]=(int)b;
+ rx.r[3]=n;
+
+ err=os_swix(OS_GBPB,&rx);
+
+ if(!err && rx.r[3]) err=geterror(ERD);
+
+ return(err);
+}
+
+
+
+
+os_error * fs_getc(int fh,int * c)
+{
+ os_error * err;
+ int        eof;
+
+ err=fs_eof(fh,&eof);
+ if(!err)
+ {
+  if(eof) *c=-1;
+  else
+  {
+   *c=0;
+   err=fs_read(fh,c,1);
+  }
+ }
+
+ return(err);
+}
+
+
+
+os_error * fs_writen(int fh,void * b,int n,int * write)
+{
+ os_regset rx;
+ os_error * err;
+
+ if(!n) return(NULL);
+
+ rx.r[0]=2;
+ rx.r[1]=fh;
+ rx.r[2]=(int)b;
+ rx.r[3]=n;
+
+ err=os_swix(OS_GBPB,&rx);
+
+ *write=n-rx.r[3];
+
+ return(err);
+}
+
+
+
+
+os_error * fs_write(int fh,void * b,int n)
+{
+ os_regset  rx;
+ os_error * err;
+
+ if(!n) return(NULL);
+
+ rx.r[0]=2;
+ rx.r[1]=fh;
+ rx.r[2]=(int)b;
+ rx.r[3]=n;
+
+ err=os_swix(OS_GBPB,&rx);
+
+ if(!err && rx.r[3]) err=geterror(EWR);
+
+ return(err);
+}
+
+
+
+
+
+
+os_error * fs_writeat(int fh,void * b,int n,int at)
+{
+ os_error * err;
+ os_regset rx;
+
+ if(!n) return(NULL);
+
+ rx.r[0]=1;
+ rx.r[1]=fh;
+ rx.r[2]=(int)b;
+ rx.r[3]=n;
+ rx.r[4]=at;
+
+ err=os_swix(OS_GBPB,&rx);
+
+ if(!err && rx.r[3]) err=geterror(EWR);
+
+ return(err);
+}
+
+
+
+os_error * fs_seek(int fh,int posn)
+{
+ os_regset rx;
+
+ rx.r[0]=1;
+ rx.r[1]=fh;
+ rx.r[2]=posn;
+
+ return(os_swix(OS_Args,&rx));
+}
+
+
+os_error * fs_setfileextent(int fh,int ex)
+{
+ os_regset rx;
+
+ rx.r[0]=3;
+ rx.r[1]=fh;
+ rx.r[2]=ex;
+
+ return(os_swix(OS_Args,&rx));
+}
+
+
+
+
+os_error * fs_saveblock(char *name,int type,void * start,int len)
+{
+ os_regset rx;
+
+ rx.r[0]=10;
+ rx.r[1]=(int)name;
+ rx.r[2]=type;
+ rx.r[4]=(int)start;
+ rx.r[5]=((int)start)+len;
+
+ return(os_swix(OS_File,&rx));
+}
+
+
+
+os_error * fs_loadblock(char *name,void * start)
+{
+ os_regset rx;
+
+ rx.r[0]=16;
+ rx.r[1]=(int)name;
+ rx.r[2]=(int)start;
+ rx.r[3]=0;
+ rx.r[4]=0;
+ rx.r[5]=0;
+
+ return(os_swix(OS_File,&rx));
+}
+
+
+os_error * fs_delete(char * name)
+{
+ os_regset rx;
+
+ rx.r[0]=6;
+ rx.r[1]=(int)name;
+
+ return(os_swix(OS_File,&rx));
+}
+
+
+
+os_error * fs_rename(char * old,char * new)
+{
+ os_regset rx;
+
+ rx.r[0]=25;
+ rx.r[1]=(int)old;
+ rx.r[2]=(int)new;
+
+ return(os_swix(OS_FSControl,&rx));
+}
+
+
+
+int fs_filetype(int load)
+{
+ if((load & 0xFFF00000)==0xFFF00000)
+           return((load >> 8) & 0xFFF);
+ else return(CODE);
+}
+
+
+static int  dirposn;
+
+void fs_startscan(void)
+{
+ dirposn=0;
+}
+
+
+void fs_savescan(int * save)
+{
+ *save=dirposn;
+}
+
+
+void fs_loadscan(int save)
+{
+ dirposn=save;
+}
+
+
+
+/* PRM page 877 */
+/* note that you can read nothing, but you have to continue */
+/* search is only over when dirposn==-1                     */
+
+
+os_error * fs_nextitem(char * dirname,fxstat * f,char * wild,int * eof)
+{
+ char       buff[sizeof(fxstat)];
+ os_error * err;
+ os_regset  rx;
+
+ err=NULL;
+ *eof=0;
+
+ while(1)
+ {
+  if(dirposn==-1)
+  {
+   *eof=1;
+   return(err);
+  }
+
+  rx.r[0]=10;
+  rx.r[1]=(int)dirname;
+  rx.r[2]=(int)buff;
+  rx.r[3]=1;
+  rx.r[4]=dirposn;
+  rx.r[5]=sizeof(buff);
+  rx.r[6]=(int)wild;
+
+  err=os_swix(OS_GBPB,&rx);
+  if(err) break;
+
+  dirposn=rx.r[4];
+
+  if(rx.r[3]) break;
+ }
+
+ if(!err)
+ {
+  f->f.load  =(* (int *)(buff+0x0));
+  f->f.exec  =(* (int *)(buff+0x4));
+  f->f.length=(* (int *)(buff+0x8));
+  f->f.acc   =(* (int *)(buff+0xC));
+  f->f.object=(* (int *)(buff+0x10));
+  strcpy(f->name,buff+0x14);
+  f->f.type=fs_filetype(f->f.load);
+ }
+
+ return(err);
+}
+
+
+os_error * fs_settype(char * filename,int type)
+{
+ char string[FSMAXPATH]; 
+ sprintf(string,"settype %s %X",filename,type);
+ return(os_cli(string));
+}
+
+
+char * fs_leaf(char * filename)
+{
+ char * p;
+
+ p=strrchr(filename,'.');
+ if(!p)
+ {
+  p=strrchr(filename,':');
+  if(!p) p=filename;
+  else   p+=1;
+ } else  p+=1;
+ return(p);
+}
+
+
+
+os_error * fs_stat(char * name,fstat * f)
+{
+ os_error  *  errpoi;
+ os_filestr  fiblock;
+
+ fiblock.action=5;
+ fiblock.name=name;
+ errpoi=os_file(&fiblock);
+ if(errpoi) return(errpoi);
+
+ f->object=fiblock.action;
+ f->length=fiblock.start;
+ f->load=fiblock.loadaddr;
+ f->exec=fiblock.execaddr;
+ f->acc =fiblock.end;
+
+ f->type=fs_filetype(f->load);
+
+ return(NULL);
+}
+
+
+os_error * fs_stamp(char * name,fstat * f)
+{
+ os_filestr  fiblock;
+
+ fiblock.action=1;
+ fiblock.name=name;
+ fiblock.loadaddr=f->load;
+ fiblock.execaddr=f->exec;
+ fiblock.start=0;
+ fiblock.end=f->acc;
+ return(os_file(&fiblock));
+}
+
+
+/* returns 0 ==does not exist  1==file 2==dir */
+
+os_error * fs_exists(char * name,int * type)
+{
+ os_filestr   fiblock;
+ os_error   * err;
+
+ fiblock.action=17;  /* don't use path */
+ fiblock.name=name;
+ err=os_file(&fiblock);
+
+ *type=fiblock.action;
+
+ return(err);
+}
+
+
+os_error * fs_create(char * name,int length,int type)
+{
+ os_filestr  fiblock;
+
+ fiblock.action=0xB;
+ fiblock.name=name;
+ if(type==-1) type=0xFFD;
+ fiblock.loadaddr=type;
+ fiblock.start=0;
+ fiblock.end=length;
+ return(os_file(&fiblock));
+}
+
+
+
+os_error * fs_cdir(char * name)
+{
+ os_filestr  fiblock;
+ fiblock.action=0x8;
+ fiblock.name=name;
+ fiblock.start=0;
+ return(os_file(&fiblock));
+}
+
+
+
+os_error * fs_wipe(char * name)
+{
+ os_error * err;
+ os_regset  rx;
+
+ rx.r[0]=27;
+ rx.r[1]=(int)name;
+ rx.r[2]=0;
+ rx.r[3]=(1<<1)|(1<<0); /* recursive + force */
+
+ err=os_swix(OS_FSControl,&rx);
+
+ return(err);
+}
+
+
+
+char * fs_typestring(int type)
+{
+ os_regset rx;
+ int       i;
+ static  char string[16];
+
+ rx.r[0]=18;
+ rx.r[2]=type;
+ os_swix(OS_FSControl,&rx);
+
+ *((int*)string)=rx.r[2];
+ *((int*)(string+4))=rx.r[3];
+ for(i=0;i<8;i++) if(string[i]<=32) break;
+ string[i]=0;
+
+ return(string);
+}
+
+
