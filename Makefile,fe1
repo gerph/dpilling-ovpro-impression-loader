@@ -30,7 +30,7 @@ INCLUDES   = C:OvProXL.,
 CDEFINES   =
 
 # Space separated list of libraries to link against, eg C:LibName.o.libLibName
-LIBS       = ${CLIB} C:OvProXL.o.libOvProXL
+LIBS       = C:OvProXL.o.libOvProXL
 
 # Objects to build, using the format o.<name> (will be varied for build type)
 OBJS       = o.bits \

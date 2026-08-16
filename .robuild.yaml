@@ -26,6 +26,10 @@ jobs:
     # The build will terminate if any command returns a non-0 return code or an error.
     script:
 
+      # We will need the !Server component of the TransShell.
+      - URLCopy https://github.com/gerph/dpilling-ovpro-transshell/releases/download/v1.00/TransFSI-1.00.zip TransFSI/zip
+      - MiniUnzip -v TransFSI/zip
+
       # Export the headers from XL library
       - echo
       - echo *** Build the XL library ***
@@ -33,7 +37,7 @@ jobs:
       - amu -f Makefile export_hdrs
       - Dir ^.^
 
-      # Export headers XL/CScript library (we only need the headers)
+      # Export XL/CScript library (we only need the headers)
       - echo
       - echo *** Build the CScript library ***
       - dir XL.CScript
@@ -51,6 +55,11 @@ jobs:
       - echo
       - echo *** Build the component ***
       - amu -f Makefile install INSTDIR=Install
+
+      # Copy in the !Server that we had to obtain separately
+      - echo
+      - echo *** Adding in !Server ***
+      - copy !TransFSI.!Server Install.!TransImp.!Server ~CF~RV
 
       # Test the command
       - echo

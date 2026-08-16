@@ -108,7 +108,6 @@ OBJS       = o.akbd \
              o.font \
              o.fsx \
              o.fsx2 \
-             o.hdr \
              o.hourglass \
              o.key \
              o.linkbase \
@@ -145,6 +144,9 @@ OBJS       = o.akbd \
              o.xpoll \
              o.xx2con \
              o.xxpoll \
+
+UNUSED =     o.hdr \
+
 
 include LibExport
 
